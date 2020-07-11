@@ -1,4 +1,3 @@
-
 // fn main() {
 //     use pulldown_cmark::{html, Options, Parser};
 
@@ -18,7 +17,10 @@
 //     let expected_html =
 //         "<p>{% include 'nested_template' %}{{head}}{{ 'tobi' | upcase }}Hello world, this is a <del>complicated</del> <em>very simple</em> example.</p>\n";
 //     assert_eq!(expected_html, &html_output);
-
+//     type Partials = liquid::partials::EagerCompiler<liquid::partials::InMemorySource>;
+//     let parser = Partials::empty();
+//     parser.add("body", "header {{content}} footer");
+//     parser.add("post", "");
 //     let template = liquid::ParserBuilder::with_stdlib()
 //         .partials(liquid::partials::OnDemandCompiler::<TestFileSystem>::empty())
 //         .build()
@@ -39,19 +41,36 @@
 //     assert_eq!(expected_html, &output);
 // }
 
-fn main(){
-    // include
-    // artilces - .md .js (parsing with babel or rust babel)
-    // place meta-data into liquid
-    // output
+// include
+// artilces - .md .js (parsing with babel or rust babel)
+// place meta-data into liquid
+// output
 
+/* todo:
 
+- paths
+- include
+- meta data
+- output
+*/
+use argh::FromArgs;
+use log::{info, warn};
 
-    /* tood:
-    - cmd line tools
-    - paths
-    - include
-    - meta data
-    - output
-    */
+pub mod cmds;
+
+#[derive(FromArgs, PartialEq, Debug)]
+/// Top-level command.
+struct TopLevel {
+    #[argh(subcommand)]
+    nested: cmds::SubCommands,
 }
+
+
+
+fn main() {
+    simple_logger::init().unwrap();
+    info!("such information");
+    warn!("o_O");
+    argh::from_env::<TopLevel>().nested.run();
+}
+// // run source output
