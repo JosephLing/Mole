@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
-use serde_json;
+use std::collections::HashMap;
+use log::{info, warn, error};
 
 #[derive(Debug, PartialEq)]
 pub enum ParseError {
@@ -9,22 +9,17 @@ pub enum ParseError {
     InvalidTemplate,       // more info on this
 }
 
-impl From<serde_json::Error> for ParseError {
-    fn from(e: serde_json::Error) -> Self {
-        print!("{:?}", e);
-        ParseError::InvalidHeader(String::from("json error"))
-    }
-}
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Config {
-    layout: String,
-    title: String,
-    description: Option<String>,
-    permalink: Option<String>,
-    categories: Option<Vec<String>>,
-    tags: Option<Vec<String>>,
-    visible: bool
+    pub layout: String,
+    pub base_layout: Option<String>,
+    pub title: String,
+    pub description: Option<String>,
+    pub permalink: Option<String>,
+    pub categories: Option<Vec<String>>,
+    pub tags: Option<Vec<String>>,
+    pub visible: bool
 }
 
 /*
@@ -52,7 +47,7 @@ impl Config {
 
     // Key factor is that they can read in any order as long as they exists
     fn parse(data: &str) -> Result<Config, ParseError> {
-        use std::collections::HashMap;
+       
         // going with simple to code and hopefully fast instead of fancy and dynamic
 
         let mut pieces: HashMap<String, String> = HashMap::new();
@@ -69,7 +64,7 @@ impl Config {
                 
                 // duplicate code ugh...
                 // one potential solution would be to use serde_yaml but that's yaml....
-                
+                // these could be matches
                 let mut desc: Option<String> = None;
                 if let Some(description) = pieces.get("description") {
                     desc = Some(description.to_string());
@@ -80,12 +75,12 @@ impl Config {
                     perma = Some(permalink.to_string());
                 }
 
-                let mut vis: bool = true;
-                if let Some(visible) = pieces.get("visible") {
-                    if let Ok(temp) = visible.parse::<bool>(){
-                        vis = temp;
-                    }
-                }
+                // let mut vis: bool = true;
+                // if let Some(visible) = pieces.get("visible") {
+                //     if let Ok(temp) = visible.parse::<bool>(){
+                //         vis = temp;
+                //     }
+                // }
 
 
                 Ok(Config {
@@ -93,11 +88,19 @@ impl Config {
                     layout: layout.to_string(),
                     title: title.to_string(),
                     description: desc,
+                    // TODO: read in base_layout as an option
+                    base_layout: Some("default".to_string()),
                     permalink: perma,
                     // TODO: these as lists would be really nice.... potentailly thinking about spinning out the json example again maybe....
                     categories: None,
                     tags: None,
-                    visible: vis
+                    visible: match pieces.get("visible") {
+                        Some(b) => match b.parse::<bool>(){
+                            Ok(b) => b,
+                            Err(_) => true,
+                        },
+                        None => true
+                    }
                 })
             } else {
                 return Err(ParseError::InvalidHeader(String::from("title error")));
@@ -129,6 +132,7 @@ fn test_config() {
     assert_eq!(
         Config {
             layout: "page".to_string(),
+            base_layout: Some("default".to_string()), 
             title: "hello world".to_string(),
             description: None,
             permalink: None,
@@ -150,14 +154,17 @@ impl Article {
     /// header is in a --- --- block with new lines
     /// the rest of the doc is template in markdown
     pub fn parse(md: &str) -> Result<Article, ParseError> {
+        info!("parsing article");
+        info!("{:?}", md);
+        info!("{:?}", md.trim());
         if md.is_empty() {
             return Err(ParseError::Empty);
         }
 
-        let lines: Vec<&str> = md.split("---\n").collect();
+        let lines: Vec<&str> = md.split("---\r\n").collect();
         if let Some(config) = lines.get(1) {
             if let Some(content) = lines.get(2) {
-                // let temp : Config =
+                info!("parsing article - config headers found");
                 return Ok(Article {
                     template: content.to_string(),
                     config: Config::parse(config)?,
@@ -188,6 +195,14 @@ fn test_empty_template() {
 #[test]
 fn test_parse() {
     let a: Article = Article::parse("---\nlayout:page\ntitle:cats and dogs---\ncat").unwrap();
+    assert_eq!("cat", a.template);
+    assert_eq!("page", a.config.layout);
+}
+
+
+#[test]
+fn test_parse_with_real() {
+    let a: Article = Article::parse("---\r\nlayout:page\r\ntitle:cats and dogs---\r\ncat").unwrap();
     assert_eq!("cat", a.template);
     assert_eq!("page", a.config.layout);
 }
