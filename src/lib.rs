@@ -1,12 +1,12 @@
 pub mod parse;
 use liquid;
+use log::{error, info, warn};
 use pulldown_cmark::{html, Options, Parser};
 use std::collections::HashMap;
 use std::fs::read_to_string;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::PathBuf;
-use log::{info, warn, error};
 
 #[derive(Debug, PartialEq)]
 enum ContentType {
@@ -50,9 +50,15 @@ fn search_dir(path: &PathBuf, file_type: &str) -> Vec<PathBuf> {
     let mut f: Vec<PathBuf> = Vec::new();
     for entry in path.read_dir().expect("read_dir call failed") {
         if let Ok(entry) = entry {
-            info!("found {:?} in {:?} {:?} {:?}", entry.path(), path, entry.path().extension(), file_type);
-            if let Some(ending) = entry.path().extension(){
-                if ending == file_type{
+            info!(
+                "found {:?} in {:?} {:?} {:?}",
+                entry.path(),
+                path,
+                entry.path().extension(),
+                file_type
+            );
+            if let Some(ending) = entry.path().extension() {
+                if ending == file_type {
                     f.push(entry.path());
                 }
             }
@@ -83,6 +89,13 @@ pub fn read_file(path: &PathBuf) -> Result<String, CustomError> {
     }
 }
 
+fn path_file_name_to_string(file_path: &PathBuf) -> Option<String>{
+    return Some(file_path
+            .file_name()?
+            .to_str()?
+            .to_owned());
+}
+
 type Partials = liquid::partials::EagerCompiler<liquid::partials::InMemorySource>;
 
 /// we are using the eager compiler because:
@@ -99,11 +112,10 @@ fn load_partials_from_path(root: &PathBuf, source: &mut Partials) -> Result<(), 
         let content = read_file(&file_path)?;
         //TODO: we want error reporting here not error failure
         // we only want it to fail if we don't find any valid partials (maybe)
-        let rel_path = file_path
-            .to_str()
-            .expect("only UTF-8 characters supported in paths")
-            .to_owned();
-        source.add(rel_path, content);
+        if let Some(rel_path) = path_file_name_to_string(&file_path){
+            info!("included added: {:?}", rel_path);
+            source.add(rel_path, content);
+        } 
     }
     Ok(())
 }
@@ -114,10 +126,16 @@ fn parse_articles(path: &PathBuf, layout: &Vec<String>, articles: &mut Vec<parse
             match parse_file(&data, ContentType::Markdown) {
                 Ok(html) => {
                     if layout.contains(&html.config.layout) {
+                        info!("pusehd html");
                         articles.push(html);
+                    } else {
+                        warn!(
+                            "layout {:?} not found in layouts: {:?}",
+                            html.config.layout, layout
+                        );
                     }
-                },
-                Err(e) => error!("{:?} in {:?} caused {:?}", f, path, e)
+                }
+                Err(e) => error!("{:?} in {:?} caused {:?}", f, path, e),
             }
         } else {
             // invalid format in the file
@@ -158,7 +176,10 @@ fn write_article(path: &PathBuf, art: parse::Article, parser: &liquid::Parser) {
         let mut file = File::create(&path).unwrap();
         file.write_all(output.as_bytes()).unwrap();
     } else {
-        info!("creating article {:?} without base layout", art.config.title);
+        info!(
+            "creating article {:?} without base layout",
+            art.config.title
+        );
         let template = parser
             .parse(&format!("{{%- include '{0}' -%}}", art.config.layout))
             .unwrap();
@@ -208,7 +229,7 @@ impl Build {
         info!("include {:?}", path);
         if path.exists() && path.is_dir() {
             load_partials_from_path(&path, &mut self.parser).unwrap();
-        }else{
+        } else {
             error!("{:?} is not a path or directory", path);
         }
         self
@@ -219,9 +240,9 @@ impl Build {
 
         load_partials_from_path(path, &mut self.parser).unwrap();
         for f in search_dir(path, "html") {
-            if let Some(name) = f.to_str() {
-                self.layouts.push(name.to_owned());
-            } else {
+            if let Some(rel_path) = path_file_name_to_string(&f){
+                self.layouts.push(rel_path);
+            }else{
                 warn!("could not get layout name");
             }
         }
@@ -261,7 +282,7 @@ impl Build {
             for art in self.articles {
                 write_article(path, art, &parser);
             }
-        }else{
+        } else {
             error!("{:?} doesn't exists", path);
         }
         Ok(())
