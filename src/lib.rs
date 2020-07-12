@@ -18,7 +18,6 @@ fn parse_file(
     contentType: ContentType,
 ) -> Result<parse::Article, parse::ParseError> {
     let mut article = parse::Article::parse(content)?;
-    info!("{:?} article parsed", article.config.title);
     if contentType == ContentType::Markdown {
         let parser = Parser::new_ext(&article.template, Options::empty());
 
@@ -27,7 +26,6 @@ fn parse_file(
         html::push_html(&mut html_output, parser);
 
         article.template = html_output;
-        info!("{:?} article converted to html", article.config.title);
         return Ok(article);
     }
 
@@ -50,13 +48,6 @@ fn search_dir(path: &PathBuf, file_type: &str) -> Vec<PathBuf> {
     let mut f: Vec<PathBuf> = Vec::new();
     for entry in path.read_dir().expect("read_dir call failed") {
         if let Ok(entry) = entry {
-            info!(
-                "found {:?} in {:?} {:?} {:?}",
-                entry.path(),
-                path,
-                entry.path().extension(),
-                file_type
-            );
             if let Some(ending) = entry.path().extension() {
                 if ending == file_type {
                     f.push(entry.path());
@@ -90,11 +81,14 @@ pub fn read_file(path: &PathBuf) -> Result<String, CustomError> {
 }
 
 /// note: should only be used for .html files
-fn path_file_name_to_string(file_path: &PathBuf) -> Option<String>{
-    return Some(file_path
+fn path_file_name_to_string(file_path: &PathBuf) -> Option<String> {
+    return Some(
+        file_path
             .file_name()?
             .to_str()?
-            .to_owned().replace(".html", ""));
+            .to_owned()
+            .replace(".html", ""),
+    );
 }
 
 type Partials = liquid::partials::EagerCompiler<liquid::partials::InMemorySource>;
@@ -107,27 +101,29 @@ type Partials = liquid::partials::EagerCompiler<liquid::partials::InMemorySource
 /// this is straight from: https://github.com/cobalt-org/cobalt.rs/blob/7fc4dd8f416e06f396906c0cbd7199b40be0944f/src/cobalt_model/template.rs
 /// however I have hacked away some bits of it
 /// NOTE: IO path handling won't be as good most likely
-fn load_partials_from_path(root: &PathBuf, source: &mut Partials) -> Result<(), CustomError> {
+fn load_partials_from_path(
+    root: &PathBuf,
+    source: &mut Partials,
+) -> Result<Vec<String>, CustomError> {
+    let mut v: Vec<String> = Vec::new();
     for file_path in search_dir(&root, "html") {
-        info!("found partial {:?} {:?}", root, file_path);
         let content = read_file(&file_path)?;
-        //TODO: we want error reporting here not error failure
-        // we only want it to fail if we don't find any valid partials (maybe)
-        if let Some(rel_path) = path_file_name_to_string(&file_path){
-            info!("included added: {:?}", rel_path);
-            source.add(rel_path, content);
-        } 
+        if let Some(rel_path) = path_file_name_to_string(&file_path) {
+            source.add(&rel_path, content);
+            v.push(rel_path);
+        }
     }
-    Ok(())
+    Ok(v)
 }
 
-fn parse_articles(path: &PathBuf, layout: &Vec<String>, articles: &mut Vec<parse::Article>) {
+/// check a dir for articles and parse them
+/// the catch is that if the article layout is not defined we throw away the article
+fn _parse_articles(path: &PathBuf, layout: &Vec<String>, articles: &mut Vec<parse::Article>) {
     for f in search_dir(&path, "md") {
         if let Ok(data) = read_file(&f) {
             match parse_file(&data, ContentType::Markdown) {
                 Ok(html) => {
                     if layout.contains(&html.config.layout) {
-                        info!("pusehd html");
                         articles.push(html);
                     } else {
                         warn!(
@@ -159,7 +155,7 @@ fn write_article(path: &PathBuf, art: parse::Article, parser: &liquid::Parser) {
         let template = parser
             .parse(&format!("{{%- include '{0}' -%}}", base_layout))
             .unwrap();
-        
+
         let output = template
             .render(&liquid::object!({
                 "content": art.template,
@@ -199,6 +195,21 @@ fn write_article(path: &PathBuf, art: parse::Article, parser: &liquid::Parser) {
     }
 }
 
+fn parse_article_wrapper (path: &PathBuf, layouts: &Vec<String>, other: &mut Vec<parse::Article>) {
+    info!("looking for markdown articles in {:?}", path);
+    if path.exists() && path.is_dir() {
+        if layouts.is_empty(){
+            panic!("empty layout list, please load in layout template files before parsing articles");
+        }else{
+            _parse_articles(path, layouts, other);
+        }
+    } else {
+        error!("{:?} is not a path or directory", path);
+    }
+    info!("found {:?} markdown files in articles", other.len());
+
+}
+
 #[derive(Debug)]
 pub struct Build {
     parser: Partials,
@@ -230,66 +241,63 @@ impl Build {
     }
 
     pub fn include(mut self, path: &PathBuf) -> Self {
-        info!("include {:?}", path);
+        info!("looking for 'include' templates in {:?}", path);
         if path.exists() && path.is_dir() {
-            load_partials_from_path(&path, &mut self.parser).unwrap();
+            let v = &load_partials_from_path(&path, &mut self.parser).unwrap();
+            info!("found {:?} templates", v.len());
         } else {
             error!("{:?} is not a path or directory", path);
         }
+
         self
     }
 
     pub fn layouts(mut self, path: &PathBuf) -> Self {
-        info!("include {:?}", path);
-
-        load_partials_from_path(path, &mut self.parser).unwrap();
-        for f in search_dir(path, "html") {
-            if let Some(rel_path) = path_file_name_to_string(&f){
-                self.layouts.push(rel_path);
-            }else{
-                warn!("could not get layout name");
-            }
+        info!("looking for 'layout' templates in {:?}", path);
+        if path.exists() && path.is_dir() {
+            self.layouts = load_partials_from_path(path, &mut self.parser).unwrap();
+        } else {
+            panic!("{:?} is not a path or directory, layout templates are required for artilces so at least one is required.", path);
         }
+        if self.layouts.len() == 0{
+            panic!("no templates found in {:?}, '*.html' files are templates and are needed for articles");
+        }
+        info!("found {:?} layouts", self.layouts.len());
 
         self
     }
 
     pub fn articles(mut self, path: &PathBuf) -> Self {
-        info!("articles {:?}", path);
-
-        parse_articles(path, &self.layouts, &mut self.articles);
-
+        parse_article_wrapper(path, &self.layouts, &mut self.articles);
         self
     }
 
     /// note: js and css not taken into account :(
     pub fn source(mut self, path: &PathBuf) -> Self {
-        info!("source {:?}", path);
-
-        parse_articles(path, &self.layouts, &mut self.source);
-
+        parse_article_wrapper(path, &self.layouts, &mut self.source);
         self
     }
 
+    /// todo: delete the output directory
+    /// as if an article is deleted then we want to have that to be represented in the
+    /// output
     pub fn compile(self, path: &PathBuf) -> Result<(), CustomError> {
-        info!("compile {:?}", path);
+        info!("writing to: {:?}", path);
 
-        if path.exists() {
+        if path.exists() && path.is_dir() {
             let parser = liquid::ParserBuilder::with_stdlib()
                 .partials(self.parser)
                 .build()
                 .unwrap();
 
-            info!("writing to: {:?}", path);
-            info!("articles {:?}", self.articles);
+            info!("layouts: {:?}", self.layouts);
 
             for art in self.articles {
-                info!("article: {:?}", art);
-                info!("layouts: {:?}", self.layouts);
+                info!("article: {:?}", art.config.title);
                 write_article(path, art, &parser);
             }
         } else {
-            error!("{:?} doesn't exists", path);
+            error!("{:?} is not a path or directory", path);
         }
         Ok(())
     }

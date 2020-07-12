@@ -21,17 +21,6 @@ pub struct Config {
     pub visible: bool,
 }
 
-/*
-
-
----
-layout: page
-title: Tags
-permalink: /tags/
-titlebar: false
----
-
-*/
 
 impl Config {
     /// For example:
@@ -50,12 +39,20 @@ impl Config {
 
         let mut pieces: HashMap<String, String> = HashMap::new();
         for line in data.split("\n") {
-            let temp: Vec<&str> = line.split(":").collect();
-            if let Some(key) = temp.get(0) {
-                if let Some(value) = temp.get(1) {
-                    pieces.insert(key.trim().to_string(), value.trim().to_string());
+            let line = line.trim();
+            if !line.is_empty(){
+                let temp: Vec<&str> = line.split(":").collect();
+                if let Some(key) = temp.get(0) {
+                    if let Some(value) = temp.get(1) {
+                        pieces.insert(key.to_string(), value.trim().to_string());
+                    }else{
+                        warn!("no value was found for {:?} in line {:?}", key, line);
+                    }
+                }else{
+                    warn!("no key value pair found on {:?}", line);
                 }
             }
+            
         }
         if let Some(layout) = pieces.get("layout") {
             if let Some(title) = pieces.get("title") {
@@ -71,13 +68,6 @@ impl Config {
                 if let Some(permalink) = pieces.get("permalink") {
                     perma = Some(permalink.to_string());
                 }
-
-                // let mut vis: bool = true;
-                // if let Some(visible) = pieces.get("visible") {
-                //     if let Ok(temp) = visible.parse::<bool>(){
-                //         vis = temp;
-                //     }
-                // }
 
                 Ok(Config {
                     // TODO: how do we handle spaces at the start of layout and title e.g. layout: page won't match "page" as it would be " page"
@@ -99,10 +89,10 @@ impl Config {
                     },
                 })
             } else {
-                return Err(ParseError::InvalidHeader(String::from("title error")));
+                return Err(ParseError::InvalidHeader(String::from("no title found in config")));
             }
         } else {
-            return Err(ParseError::InvalidHeader(String::from("layout error")));
+            return Err(ParseError::InvalidHeader(String::from("no layout found in config")));
         }
     }
 }
@@ -110,7 +100,7 @@ impl Config {
 #[test]
 fn test_config_layout() {
     assert_eq!(
-        Some(ParseError::InvalidHeader(String::from("layout error"))),
+        Some(ParseError::InvalidHeader(String::from("no layout found in config"))),
         Config::parse("").err()
     );
 }
@@ -118,7 +108,7 @@ fn test_config_layout() {
 #[test]
 fn test_config_title() {
     assert_eq!(
-        Some(ParseError::InvalidHeader(String::from("title error"))),
+        Some(ParseError::InvalidHeader(String::from("no title found in config"))),
         Config::parse("layout: page").err()
     );
 }
@@ -184,9 +174,6 @@ impl Article {
     /// header is in a --- --- block with new lines
     /// the rest of the doc is template in markdown
     pub fn parse(md: &str) -> Result<Article, ParseError> {
-        info!("parsing article");
-        info!("{:?}", md);
-        info!("{:?}", md.trim());
         if md.is_empty() {
             return Err(ParseError::Empty);
         }
@@ -194,7 +181,11 @@ impl Article {
         let lines: Vec<&str> = md.split("---").collect();
         if let Some(config) = lines.get(1) {
             if let Some(content) = to_string_vector(&lines, 2) {
-                info!("parsing article - config headers found");
+                if content.starts_with("-") {
+                    return Err(ParseError::InvalidHeader(
+                        "only 3 dashes allowed for config header".to_string(),
+                    ));
+                }
                 return Ok(Article {
                     template: content.trim().to_string(),
                     config: Config::parse(config)?,
@@ -247,7 +238,17 @@ fn test_template_md_line() {
 
 #[test]
 fn test_parse_with_real() {
-    let a: Article = Article::parse("---\r\nlayout:page\r\ntitle:cats and dogs---\r\ncat").unwrap();
+    let a: Article = Article::parse("---\r\nlayout: page\r\ntitle:cats and dogs---\r\ncat").unwrap();
     assert_eq!("cat", a.template);
     assert_eq!("page", a.config.layout);
+}
+
+#[test]
+fn test_more_than_three_dashes() {
+    assert_eq!(
+        Some(ParseError::InvalidHeader(
+            "only 3 dashes allowed for config header".to_string()
+        )),
+        Article::parse("----\r\nlayout:page\r\ntitle:cats and dogs-------\r\ncat").err()
+    );
 }
