@@ -89,11 +89,12 @@ pub fn read_file(path: &PathBuf) -> Result<String, CustomError> {
     }
 }
 
+/// note: should only be used for .html files
 fn path_file_name_to_string(file_path: &PathBuf) -> Option<String>{
     return Some(file_path
             .file_name()?
             .to_str()?
-            .to_owned());
+            .to_owned().replace(".html", ""));
 }
 
 type Partials = liquid::partials::EagerCompiler<liquid::partials::InMemorySource>;
@@ -158,7 +159,7 @@ fn write_article(path: &PathBuf, art: parse::Article, parser: &liquid::Parser) {
         let template = parser
             .parse(&format!("{{%- include '{0}' -%}}", base_layout))
             .unwrap();
-
+        
         let output = template
             .render(&liquid::object!({
                 "content": art.template,
@@ -172,8 +173,11 @@ fn write_article(path: &PathBuf, art: parse::Article, parser: &liquid::Parser) {
                 }),
             }))
             .unwrap();
+        let mut output_path = path.clone();
+        output_path.push(PathBuf::from(art.config.title + ".html"));
+        info!("writing to {:?}", output_path);
 
-        let mut file = File::create(&path).unwrap();
+        let mut file = File::create(output_path).unwrap();
         file.write_all(output.as_bytes()).unwrap();
     } else {
         info!(
@@ -280,6 +284,8 @@ impl Build {
             info!("articles {:?}", self.articles);
 
             for art in self.articles {
+                info!("article: {:?}", art);
+                info!("layouts: {:?}", self.layouts);
                 write_article(path, art, &parser);
             }
         } else {
