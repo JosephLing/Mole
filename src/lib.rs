@@ -163,13 +163,13 @@ fn write_article(path: &PathBuf, art: parse::Article, parser: &liquid::Parser) {
         let output = template
             .render(&liquid::object!({
                 "content": art.template,
-                "default": format!("{{%- include '{0}' -%}}", art.config.layout),
                 "config": liquid::object!({
                     "title": art.config.title,
                     "description": art.config.description,
                     "tags": art.config.tags,
                     "categories": art.config.categories,
-                    "visible": art.config.visible
+                    "visible": art.config.visible,
+                    "layout": art.config.layout
                 }),
             }))
             .unwrap();
