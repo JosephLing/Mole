@@ -1,5 +1,5 @@
-use predicates::prelude::*;
 use assert_cmd::prelude::*;
+use predicates::prelude::*;
 use std::process;
 
 #[test]
@@ -8,9 +8,11 @@ pub fn no_subcommand() {
         .unwrap()
         .assert()
         .failure()
-        .stdout(predicate::str::contains("One of the following subcommands must be present:").from_utf8());
+        .stdout(
+            predicate::str::contains("One of the following subcommands must be present:")
+                .from_utf8(),
+        );
 }
-
 
 // #[test]
 // pub fn build_no_path() {

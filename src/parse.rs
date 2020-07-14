@@ -1,4 +1,4 @@
-use log::{error, info, warn};
+use log::warn;
 use std::collections::HashMap;
 
 #[derive(Debug, PartialEq)]
@@ -21,7 +21,6 @@ pub struct Config {
     pub visible: bool,
 }
 
-
 impl Config {
     /// For example:
     ///
@@ -40,19 +39,18 @@ impl Config {
         let mut pieces: HashMap<String, String> = HashMap::new();
         for line in data.split("\n") {
             let line = line.trim();
-            if !line.is_empty(){
+            if !line.is_empty() {
                 let temp: Vec<&str> = line.split(":").collect();
                 if let Some(key) = temp.get(0) {
                     if let Some(value) = temp.get(1) {
                         pieces.insert(key.to_string(), value.trim().to_string());
-                    }else{
+                    } else {
                         warn!("no value was found for {:?} in line {:?}", key, line);
                     }
-                }else{
+                } else {
                     warn!("no key value pair found on {:?}", line);
                 }
             }
-            
         }
         if let Some(layout) = pieces.get("layout") {
             if let Some(title) = pieces.get("title") {
@@ -89,10 +87,14 @@ impl Config {
                     },
                 })
             } else {
-                return Err(ParseError::InvalidHeader(String::from("no title found in config")));
+                return Err(ParseError::InvalidHeader(String::from(
+                    "no title found in config",
+                )));
             }
         } else {
-            return Err(ParseError::InvalidHeader(String::from("no layout found in config")));
+            return Err(ParseError::InvalidHeader(String::from(
+                "no layout found in config",
+            )));
         }
     }
 }
@@ -100,7 +102,9 @@ impl Config {
 #[test]
 fn test_config_layout() {
     assert_eq!(
-        Some(ParseError::InvalidHeader(String::from("no layout found in config"))),
+        Some(ParseError::InvalidHeader(String::from(
+            "no layout found in config"
+        ))),
         Config::parse("").err()
     );
 }
@@ -108,7 +112,9 @@ fn test_config_layout() {
 #[test]
 fn test_config_title() {
     assert_eq!(
-        Some(ParseError::InvalidHeader(String::from("no title found in config"))),
+        Some(ParseError::InvalidHeader(String::from(
+            "no title found in config"
+        ))),
         Config::parse("layout: page").err()
     );
 }
@@ -195,7 +201,7 @@ impl Article {
             return Err(ParseError::NoHeader);
         }
 
-        return Err(ParseError::InvalidTemplate);
+        Err(ParseError::InvalidTemplate)
     }
 }
 
@@ -238,7 +244,8 @@ fn test_template_md_line() {
 
 #[test]
 fn test_parse_with_real() {
-    let a: Article = Article::parse("---\r\nlayout: page\r\ntitle:cats and dogs---\r\ncat").unwrap();
+    let a: Article =
+        Article::parse("---\r\nlayout: page\r\ntitle:cats and dogs---\r\ncat").unwrap();
     assert_eq!("cat", a.template);
     assert_eq!("page", a.config.layout);
 }
