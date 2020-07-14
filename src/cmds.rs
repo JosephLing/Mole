@@ -9,8 +9,8 @@
 
 */
 use argh::FromArgs;
+use log::info;
 use std::path::PathBuf;
-use log::{info};
 
 use mole;
 
@@ -70,10 +70,9 @@ pub struct BuildCommand {
     /// path from 'source' to articles folder
     articles: PathBuf,
 
-    // TODO: is this going to be a thing
-    #[argh(option, default = "PathBuf::from(\"_js/\")")]
-    /// path from 'source' to js folder
-    js: PathBuf,
+    #[argh(option, default = "PathBuf::from(\"_css/\")")]
+    /// path from 'source' to articles folder
+    scss: PathBuf,
 }
 
 impl BuildCommand {
@@ -84,6 +83,8 @@ impl BuildCommand {
             .layouts(&self.layouts)
             .articles(&self.articles)
             .source(&self.source)
-            .compile(&self.dest).unwrap();
+            .sccs(&self.scss)
+            .compile(&self.dest)
+            .unwrap();
     }
 }

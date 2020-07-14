@@ -1,5 +1,4 @@
 pub mod parse;
-use liquid;
 use log::{error, info, warn};
 use pulldown_cmark::{html, Options, Parser};
 use std::collections::HashMap;
@@ -15,10 +14,10 @@ enum ContentType {
 
 fn parse_file(
     content: &str,
-    contentType: ContentType,
+    content_type: ContentType,
 ) -> Result<parse::Article, parse::ParseError> {
     let mut article = parse::Article::parse(content)?;
-    if contentType == ContentType::Markdown {
+    if content_type == ContentType::Markdown {
         let parser = Parser::new_ext(&article.template, Options::empty());
 
         // Write to String buffer.
@@ -30,7 +29,7 @@ fn parse_file(
     }
 
     // hack of an error message
-    return Err(parse::ParseError::InvalidTemplate);
+    Err(parse::ParseError::InvalidTemplate)
 }
 
 #[test]
@@ -55,7 +54,8 @@ fn search_dir(path: &PathBuf, file_type: &str) -> Vec<PathBuf> {
             }
         }
     }
-    return f;
+
+    f
 }
 
 #[derive(Debug)]
@@ -82,13 +82,13 @@ pub fn read_file(path: &PathBuf) -> Result<String, CustomError> {
 
 /// note: should only be used for .html files
 fn path_file_name_to_string(file_path: &PathBuf) -> Option<String> {
-    return Some(
+    Some(
         file_path
             .file_name()?
             .to_str()?
             .to_owned()
             .replace(".html", ""),
-    );
+    )
 }
 
 type Partials = liquid::partials::EagerCompiler<liquid::partials::InMemorySource>;
@@ -195,19 +195,20 @@ fn write_article(path: &PathBuf, art: parse::Article, parser: &liquid::Parser) {
     }
 }
 
-fn parse_article_wrapper (path: &PathBuf, layouts: &Vec<String>, other: &mut Vec<parse::Article>) {
+fn parse_article_wrapper(path: &PathBuf, layouts: &Vec<String>, other: &mut Vec<parse::Article>) {
     info!("looking for markdown articles in {:?}", path);
     if path.exists() && path.is_dir() {
-        if layouts.is_empty(){
-            panic!("empty layout list, please load in layout template files before parsing articles");
-        }else{
+        if layouts.is_empty() {
+            panic!(
+                "empty layout list, please load in layout template files before parsing articles"
+            );
+        } else {
             _parse_articles(path, layouts, other);
         }
     } else {
         error!("{:?} is not a path or directory", path);
     }
     info!("found {:?} markdown files in articles", other.len());
-
 }
 
 #[derive(Debug)]
@@ -217,6 +218,7 @@ pub struct Build {
     articles: Vec<parse::Article>,
     source: Vec<parse::Article>,
     tags: HashMap<String, Vec<String>>,
+    css: Vec<String>,
     categories: HashMap<String, Vec<String>>,
 }
 
@@ -232,6 +234,8 @@ impl Build {
             // source to output
             articles: Vec::new(),
             source: Vec::new(),
+
+            css: Vec::new(),
 
             // we are going to store these so we don't have to
             // recaculate them if we detect changes in the layout or parser/include
@@ -259,7 +263,7 @@ impl Build {
         } else {
             panic!("{:?} is not a path or directory, layout templates are required for artilces so at least one is required.", path);
         }
-        if self.layouts.len() == 0{
+        if self.layouts.len() == 0 {
             panic!("no templates found in {:?}, '*.html' files are templates and are needed for articles");
         }
         info!("found {:?} layouts", self.layouts.len());
@@ -278,6 +282,39 @@ impl Build {
         self
     }
 
+    pub fn sccs(mut self, path: &PathBuf) -> Self {
+        if path.exists() && path.is_dir() {
+            for f in search_dir(path, "scss") {
+                info!("{:?}", f);
+                if let Ok(data) = read_to_string(&f) {
+                    match grass::from_string(data) {
+                        Ok(css) => {
+                            info!("output: {:?}", css);
+                            self.css.push(css);
+                        }
+                        Err(e) => warn!("parsing sccs {:?} caused {:?}", f, e),
+                    }
+                } else {
+                    warn!("soemthing went wrong");
+                }
+            }
+            for f in search_dir(path, "scss") {
+                let s = &f.clone().into_os_string().into_string().unwrap();
+                // info!("cat {:?}", String::from_utf8(fs::read(s).unwrap()).unwrap());
+                match grass::from_path(s) {
+                    Ok(css) => {
+                        info!("output: {:?}", css);
+                        self.css.push(css);
+                    }
+                    Err(e) => warn!("parsing sccs something caused {:?}", e),
+                }
+            }
+        } else {
+            warn!("{:?} is not a path or directory, .css files will be copied across but no .sccs compiling will happen", path);
+        }
+        self
+    }
+
     /// todo: delete the output directory
     /// as if an article is deleted then we want to have that to be represented in the
     /// output
@@ -291,7 +328,7 @@ impl Build {
                 .unwrap();
 
             info!("layouts: {:?}", self.layouts);
-
+            info!("css {:?}", self.css);
             for art in self.articles {
                 info!("article: {:?}", art.config.title);
                 write_article(path, art, &parser);
