@@ -78,13 +78,12 @@ pub struct BuildCommand {
 impl BuildCommand {
     pub fn run(self) {
         info!("building");
-        mole::Build::new()
-            .include(&self.include)
-            .layouts(&self.layouts)
-            .articles(&self.articles)
-            .source(&self.source)
-            .sccs(&self.scss)
-            .compile(&self.dest)
-            .unwrap();
+
+        mole::Build::new(self.dest)
+            .includes(&vec![self.include], false)
+            .includes(&vec![self.layouts], true)
+            .articles(&vec![self.source, self.articles])
+            .sass(&vec![self.scss])
+            .run();
     }
 }

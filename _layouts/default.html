@@ -10,7 +10,11 @@
     <div class="page-content">
        
       <div class="wrapper">
-        {% include config.layout %}
+        {{global}}
+
+        <p>{{page}}</p>
+        <p><h1>{{page.config.layout}}</h1></p>
+        {% include 'page' %}
       </div>
     </div>
    

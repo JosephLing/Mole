@@ -1,6 +1,5 @@
 ---
-layout: page
-base_layout: page
+layout:page
 title: give me all the dreamies
 description: hello world
 

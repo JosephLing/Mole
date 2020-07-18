@@ -1,4 +1,6 @@
+use crate::error::CustomError;
 use log::warn;
+use pulldown_cmark::{html, Options, Parser};
 use std::collections::HashMap;
 
 #[derive(Debug, PartialEq)]
@@ -7,21 +9,6 @@ pub enum ParseError {
     NoHeader,
     InvalidHeader(String), // we will want more info here
     InvalidTemplate,       // more info on this
-}
-
-#[derive(Debug)]
-pub struct CustomError(pub String);
-
-impl From<std::io::Error> for CustomError {
-    fn from(e: std::io::Error) -> Self {
-        CustomError(e.to_string())
-    }
-}
-
-impl From<liquid::Error> for CustomError {
-    fn from(e: liquid::Error) -> Self {
-        CustomError(e.to_string())
-    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -211,10 +198,18 @@ impl Article {
                     ));
                 }
                 let config = Config::parse(config)?;
+                
+                // markdown parsing NOTE: we are assuming that we are dealing with markdown hear!!!
                 let template = content.trim().to_string();
+                let parser = Parser::new_ext(&template, Options::empty());
+
+                // Write to String buffer.
+                let mut template = String::new();
+                html::push_html(&mut template, parser);
+
                 let url: String = if config.permalink.is_empty() {
                     format!("{}.html", config.title)
-                }else{
+                } else {
                     config.permalink.clone() // messy.... argh!!!
                 };
                 let config_liquid = liquid::object!({
@@ -243,7 +238,7 @@ impl Article {
         Err(ParseError::InvalidTemplate)
     }
 
-    fn render(
+    pub fn render(
         &self,
         globals: &liquid::Object,
         parser: &liquid::Parser,
@@ -252,12 +247,14 @@ impl Article {
             warn!("no base layout found");
             parser.parse(&self.template)?
         } else {
+            warn!("using baselayout: {:?}", self.config.base_layout);
             parser.parse(&format!("{{%- include '{0}' -%}}", self.config.base_layout))?
         };
 
         Ok(template.render(&liquid::object!({
             "global": globals,
             "page": self.config_liquid,
+            "layout": "page"
         }))?)
     }
 }
