@@ -9,13 +9,28 @@ pub enum ParseError {
     InvalidTemplate,       // more info on this
 }
 
+#[derive(Debug)]
+pub struct CustomError(pub String);
+
+impl From<std::io::Error> for CustomError {
+    fn from(e: std::io::Error) -> Self {
+        CustomError(e.to_string())
+    }
+}
+
+impl From<liquid::Error> for CustomError {
+    fn from(e: liquid::Error) -> Self {
+        CustomError(e.to_string())
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Config {
     pub layout: String,
-    pub base_layout: Option<String>,
+    pub base_layout: String,
     pub title: String,
     pub description: Option<String>,
-    pub permalink: Option<String>,
+    pub permalink: String,
     pub categories: Option<Vec<String>>,
     pub tags: Option<Vec<String>>,
     pub visible: bool,
@@ -57,24 +72,25 @@ impl Config {
                 // duplicate code ugh...
                 // one potential solution would be to use serde_yaml but that's yaml....
                 // these could be matches
-                let mut desc: Option<String> = None;
-                if let Some(description) = pieces.get("description") {
-                    desc = Some(description.to_string());
-                }
-
-                let mut perma: Option<String> = None;
-                if let Some(permalink) = pieces.get("permalink") {
-                    perma = Some(permalink.to_string());
-                }
-
                 Ok(Config {
                     // TODO: how do we handle spaces at the start of layout and title e.g. layout: page won't match "page" as it would be " page"
                     layout: layout.to_string(),
                     title: title.to_string(),
-                    description: desc,
+                    description: if let Some(description) = pieces.get("description") {
+                        Some(description.to_string())
+                    } else {
+                        None
+                    },
                     // TODO: read in base_layout as an option
-                    base_layout: Some("default".to_string()),
-                    permalink: perma,
+                    base_layout: match pieces.get("base_layout") {
+                        Some(b) => b.to_string(),
+                        None => "default".to_string(),
+                    },
+                    permalink: if let Some(permalink) = pieces.get("permalink") {
+                        permalink.to_string()
+                    } else {
+                        String::from("")
+                    },
                     // TODO: these as lists would be really nice.... potentailly thinking about spinning out the json example again maybe....
                     categories: None,
                     tags: None,
@@ -87,14 +103,14 @@ impl Config {
                     },
                 })
             } else {
-                return Err(ParseError::InvalidHeader(String::from(
+                Err(ParseError::InvalidHeader(String::from(
                     "no title found in config",
-                )));
+                )))
             }
         } else {
-            return Err(ParseError::InvalidHeader(String::from(
+            Err(ParseError::InvalidHeader(String::from(
                 "no layout found in config",
-            )));
+            )))
         }
     }
 }
@@ -124,10 +140,10 @@ fn test_config() {
     assert_eq!(
         Config {
             layout: "page".to_string(),
-            base_layout: Some("default".to_string()),
+            base_layout: "default".to_string(),
             title: "hello world".to_string(),
             description: None,
-            permalink: None,
+            permalink: "".to_string(),
             categories: None,
             tags: None,
             visible: true
@@ -141,10 +157,10 @@ fn test_config_carrige_returns() {
     assert_eq!(
         Config {
             layout: "page".to_string(),
-            base_layout: Some("default".to_string()),
+            base_layout: "default".to_string(),
             title: "hello world".to_string(),
             description: None,
-            permalink: None,
+            permalink: "".to_string(),
             categories: None,
             tags: None,
             visible: true
@@ -157,6 +173,8 @@ fn test_config_carrige_returns() {
 pub struct Article {
     pub template: String,
     pub config: Config,
+    pub url: String,
+    pub config_liquid: liquid::Object,
 }
 
 fn to_string_vector(v: &Vec<&str>, start: usize) -> Option<String> {
@@ -192,9 +210,30 @@ impl Article {
                         "only 3 dashes allowed for config header".to_string(),
                     ));
                 }
+                let config = Config::parse(config)?;
+                let template = content.trim().to_string();
+                let url: String = if config.permalink.is_empty() {
+                    format!("{}.html", config.title)
+                }else{
+                    config.permalink.clone() // messy.... argh!!!
+                };
+                let config_liquid = liquid::object!({
+                    "content": template,
+                    "config": liquid::object!({
+                        "title": config.title,
+                        "description": config.description,
+                        "tags": config.tags,
+                        "categories": config.categories,
+                        "visible": config.visible,
+                        "layout": config.layout
+                    }),
+                });
+                // if let Some(base_layout) =
                 return Ok(Article {
-                    template: content.trim().to_string(),
-                    config: Config::parse(config)?,
+                    template,
+                    config,
+                    url,
+                    config_liquid,
                 });
             }
         } else {
@@ -202,6 +241,24 @@ impl Article {
         }
 
         Err(ParseError::InvalidTemplate)
+    }
+
+    fn render(
+        &self,
+        globals: &liquid::Object,
+        parser: &liquid::Parser,
+    ) -> Result<String, CustomError> {
+        let template = if self.config.base_layout.is_empty() {
+            warn!("no base layout found");
+            parser.parse(&self.template)?
+        } else {
+            parser.parse(&format!("{{%- include '{0}' -%}}", self.config.base_layout))?
+        };
+
+        Ok(template.render(&liquid::object!({
+            "global": globals,
+            "page": self.config_liquid,
+        }))?)
     }
 }
 

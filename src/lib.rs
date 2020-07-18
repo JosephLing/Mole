@@ -1,4 +1,5 @@
 pub mod parse;
+use crate::parse::CustomError;
 use log::{error, info, warn};
 use pulldown_cmark::{html, Options, Parser};
 use std::collections::HashMap;
@@ -6,7 +7,6 @@ use std::fs::read_to_string;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::PathBuf;
-
 #[derive(Debug, PartialEq)]
 enum ContentType {
     Markdown,
@@ -58,22 +58,7 @@ fn search_dir(path: &PathBuf, file_type: &str) -> Vec<PathBuf> {
     f
 }
 
-#[derive(Debug)]
-pub struct CustomError(String);
-
-impl From<std::io::Error> for CustomError {
-    fn from(e: std::io::Error) -> Self {
-        CustomError(e.to_string())
-    }
-}
-
-impl From<liquid::Error> for CustomError {
-    fn from(e: liquid::Error) -> Self {
-        CustomError(e.to_string())
-    }
-}
-
-pub fn read_file(path: &PathBuf) -> Result<String, CustomError> {
+pub fn read_file(path: &PathBuf) -> Result<String, parse::CustomError> {
     match read_to_string(path)?.parse::<String>() {
         Ok(c) => Ok(c),
         Err(e) => Err(CustomError(e.to_string())),
@@ -150,49 +135,31 @@ fn _parse_articles(path: &PathBuf, layout: &Vec<String>, articles: &mut Vec<pars
 /// it's v. hacky
 /// if there is no base_layout just the normal defined layout will be used
 fn write_article(path: &PathBuf, art: parse::Article, parser: &liquid::Parser) {
-    if let Some(base_layout) = art.config.base_layout {
-        info!("creating article {:?} with base layout", art.config.title);
-        let template = parser
-            .parse(&format!("{{%- include '{0}' -%}}", base_layout))
-            .unwrap();
+    let base_layout = art.config.base_layout;
+    info!("creating article {:?} with base layout", art.config.title);
+    let template = parser
+        .parse(&format!("{{%- include '{0}' -%}}", base_layout))
+        .unwrap();
 
-        let output = template
-            .render(&liquid::object!({
-                "content": art.template,
-                "config": liquid::object!({
-                    "title": art.config.title,
-                    "description": art.config.description,
-                    "tags": art.config.tags,
-                    "categories": art.config.categories,
-                    "visible": art.config.visible,
-                    "layout": art.config.layout
-                }),
-            }))
-            .unwrap();
-        let mut output_path = path.clone();
-        output_path.push(PathBuf::from(art.config.title + ".html"));
-        info!("writing to {:?}", output_path);
+    let output = template
+        .render(&liquid::object!({
+            "content": art.template,
+            "config": liquid::object!({
+                "title": art.config.title,
+                "description": art.config.description,
+                "tags": art.config.tags,
+                "categories": art.config.categories,
+                "visible": art.config.visible,
+                "layout": art.config.layout
+            }),
+        }))
+        .unwrap();
+    let mut output_path = path.clone();
+    output_path.push(PathBuf::from(art.config.title + ".html"));
+    info!("writing to {:?}", output_path);
 
-        let mut file = File::create(output_path).unwrap();
-        file.write_all(output.as_bytes()).unwrap();
-    } else {
-        info!(
-            "creating article {:?} without base layout",
-            art.config.title
-        );
-        let template = parser
-            .parse(&format!("{{%- include '{0}' -%}}", art.config.layout))
-            .unwrap();
-
-        let output = template
-            .render(&liquid::object!({
-                "content": art.template,
-            }))
-            .unwrap();
-
-        let mut file = File::create(&path).unwrap();
-        file.write_all(output.as_bytes()).unwrap();
-    }
+    let mut file = File::create(output_path).unwrap();
+    file.write_all(output.as_bytes()).unwrap();
 }
 
 fn parse_article_wrapper(path: &PathBuf, layouts: &Vec<String>, other: &mut Vec<parse::Article>) {
