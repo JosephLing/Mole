@@ -1,17 +1,11 @@
 pub mod parse;
 use log::{error, info, warn};
-use pulldown_cmark::{html, Options, Parser};
 use std::fs::read_to_string;
 use std::fs::File;
 use std::io::prelude::*;
-use std::path::{Path, PathBuf};
+use std::path::{PathBuf, Path};
 mod error;
 mod util;
-
-#[derive(Debug, PartialEq)]
-enum ContentType {
-    Markdown,
-}
 
 pub type Partials = liquid::partials::EagerCompiler<liquid::partials::InMemorySource>;
 
@@ -46,7 +40,6 @@ impl Build {
     pub fn includes(mut self, temp: &Vec<PathBuf>, layout: bool) -> Self {
         for dir in temp {
             if dir.exists() && dir.is_dir() {
-                let mut v: Vec<String> = Vec::new();
                 for file_path in util::search_dir(dir, "html") {
                     //TODO: error handling!!!
                     let content = util::read_file(&file_path).unwrap();
@@ -57,14 +50,13 @@ impl Build {
                             info!("new include {:?}", rel_path);
                         }
                         self.parser.add(&rel_path, content);
-                        v.push(rel_path);
+                        if layout {
+                            self.layouts.push(rel_path);
+                        }
                     }
                 }
-                if layout {
-                    self.layouts.append(&mut v);
-                }
 
-                info!("found {:?} templates", v.len());
+            // info!("found {:?} templates", v.len());
             } else {
                 error!("{:?} is not a path or directory", dir);
             }
@@ -99,7 +91,7 @@ impl Build {
     }
 
     /// TODO: ignore _files
-    pub fn sass(mut self, temp: &Vec<PathBuf>) -> Self {
+    pub fn sass(self, temp: &Vec<PathBuf>) -> Self {
         for dir in temp {
             if dir.exists() && dir.is_dir() {
                 for f in util::search_dir(dir, "scss") {
@@ -107,7 +99,12 @@ impl Build {
                     if let Ok(data) = read_to_string(&f) {
                         match grass::from_string(data) {
                             Ok(css) => {
-                                info!("output: {:?}", css);
+                                let mut output_path = self.output.clone();
+                                output_path.push(Path::new(&util::path_file_name_to_string(&f).unwrap()));
+                                info!("writing css to {:?}", output_path);
+
+                                let mut file = File::create(output_path).unwrap();
+                                file.write_all(css.as_bytes()).unwrap();
                                 //TODO: write to disk
                             }
                             Err(e) => warn!("parsing sccs {:?} caused {:?}", f, e),
@@ -133,17 +130,14 @@ impl Build {
             "articles": foo,
         });
 
-        info!("{:?}", self.parser);
-
         let parser = liquid::ParserBuilder::with_stdlib()
             .partials(self.parser)
             .build()
             .unwrap();
-            info!("{:?}", self.layouts);
+        info!("{:?}", self.layouts);
 
         for obj in &self.articles {
             // write the result to p
-            info!("{:?}", obj);
             let output: String = obj.render(&global, &parser).unwrap();
 
             //TODO: make this be the url

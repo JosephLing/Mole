@@ -220,8 +220,9 @@ impl Article {
                         "tags": config.tags,
                         "categories": config.categories,
                         "visible": config.visible,
-                        "layout": config.layout
+                        "layout": config.layout,
                     }),
+                    "url":url,
                 });
                 // if let Some(base_layout) =
                 return Ok(Article {
@@ -417,6 +418,28 @@ mod render {
                     ("page".to_string(), "{{page.content}}".to_string()),
                     ("page4".to_string(), "3".to_string())
                 ],
+                &liquid::object!({
+                    "test": 1
+                })
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn render_template_jekyll() {
+        assert_eq!(
+            "<h1>mole</h1><p>cat mole</p>\n".to_string(),
+            gen_render_mocks(
+                "---\r\nlayout: page\r\ntitle:mole---\r\ncat {{page.config.title}}",
+                vec![(
+                    "default".to_string(),
+                    "<h1>{{page.config.title}}</h1>{% include layout %}".to_string()
+                ),
+                (
+                    "page".to_string(),
+                    "{{page.content}}".to_string()
+                )],
                 &liquid::object!({
                     "test": 1
                 })
