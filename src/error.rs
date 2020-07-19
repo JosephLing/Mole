@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct CustomError(pub String);
 
 impl From<std::io::Error> for CustomError {

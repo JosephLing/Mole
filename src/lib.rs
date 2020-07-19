@@ -9,12 +9,12 @@ mod util;
 
 pub type Partials = liquid::partials::EagerCompiler<liquid::partials::InMemorySource>;
 
-#[derive(Debug)]
 pub struct Build {
-    parser: Partials,
+    includes: Partials,
     articles: Vec<parse::Article>,
     layouts: Vec<String>,
     output: PathBuf,
+    parser: Option<liquid::Parser>,
 }
 
 /**
@@ -28,10 +28,11 @@ build::new("_output/")
 impl Build {
     pub fn new(path: PathBuf) -> Self {
         Build {
-            parser: Partials::empty(),
+            includes: Partials::empty(),
             layouts: Vec::new(),
             articles: Vec::new(),
             output: path,
+            parser: None
         }
     }
 
@@ -49,7 +50,7 @@ impl Build {
                         } else {
                             info!("new include {:?}", rel_path);
                         }
-                        self.parser.add(&rel_path, content);
+                        self.includes.add(&rel_path, content);
                         if layout {
                             self.layouts.push(rel_path);
                         }
@@ -65,6 +66,10 @@ impl Build {
     }
 
     pub fn articles(mut self, temp: &Vec<PathBuf>) -> Self {
+        self.parser = Some(liquid::ParserBuilder::with_stdlib()
+        .partials(self.includes)
+        .build()
+        .unwrap());
         for dir in temp {
             info!("looking for markdown articles in {:?}", dir);
             if dir.exists() && dir.is_dir() {
@@ -75,7 +80,7 @@ impl Build {
                 } else {
                     for f in util::search_dir(&dir, "md") {
                         if let Ok(data) = util::read_file(&f) {
-                            self.articles.push(parse::Article::parse(&data).unwrap());
+                            self.articles.push(parse::Article::parse(&data).unwrap().pre_render(&self.parser.unwrap()));
                         } else {
                             // invalid format in the file
                             warn!("invalid file format for {:?}", dir);
@@ -120,8 +125,9 @@ impl Build {
         self
     }
 
-    pub fn run(self) {
+    pub fn run(mut self) {
         let mut foo: Vec<&liquid::Object> = Vec::new();
+
         for obj in &self.articles {
             foo.push(&obj.config_liquid);
         }
@@ -130,15 +136,12 @@ impl Build {
             "articles": foo,
         });
 
-        let parser = liquid::ParserBuilder::with_stdlib()
-            .partials(self.parser)
-            .build()
-            .unwrap();
+        
         info!("{:?}", self.layouts);
 
-        for obj in &self.articles {
+        for obj in self.articles {
             // write the result to p
-            let output: String = obj.render(&global, &parser).unwrap();
+            let output: String = obj.render(&global, &self.parser.unwrap()).unwrap();
 
             //TODO: make this be the url
             let mut output_path = self.output.clone();

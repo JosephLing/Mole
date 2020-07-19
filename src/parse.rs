@@ -201,11 +201,6 @@ impl Article {
 
                 // markdown parsing NOTE: we are assuming that we are dealing with markdown hear!!!
                 let template = content.trim().to_string();
-                let parser = Parser::new_ext(&template, Options::empty());
-
-                // Write to String buffer.
-                let mut template = String::new();
-                html::push_html(&mut template, parser);
 
                 let url: String = if config.permalink.is_empty() {
                     format!("{}.html", config.title)
@@ -239,6 +234,44 @@ impl Article {
         Err(ParseError::InvalidTemplate)
     }
 
+    pub fn pre_render(mut self, liquidParser: &liquid::Parser) -> Self {
+        // hack do proper error handling!!!
+
+        println!("{:?}", self.config_liquid);
+        let template = liquidParser
+            .parse(&self.template)
+            .unwrap()
+            .render(&liquid::object!({
+                "page": self.config_liquid
+                // "page": liquid::object!({
+                //     "title": "cats and dogs"
+                // })
+            }))
+            .unwrap();
+
+        let parser = Parser::new_ext(&template, Options::empty());
+
+        // Write to String buffer.
+        let mut template = String::new();
+        html::push_html(&mut template, parser);
+
+        self.template = template;
+
+        self.config_liquid = liquid::object!({
+            "content": self.template,
+            "config": liquid::object!({
+                "title": self.config.title,
+                "description": self.config.description,
+                "tags": self.config.tags,
+                "categories": self.config.categories,
+                "visible": self.config.visible,
+                "layout": self.config.layout,
+            }),
+            "url":self.url,
+        });
+        self
+    }
+
     pub fn render(
         &self,
         globals: &liquid::Object,
@@ -260,59 +293,117 @@ impl Article {
     }
 }
 
+#[cfg(test)]
+mod parse {
 
-#[test]
-fn test_empty_content() {
-    assert_eq!(Some(ParseError::Empty), Article::parse("").err());
+    use super::*;
+
+    #[test]
+    fn empty_content() {
+        assert_eq!(Some(ParseError::Empty), Article::parse("").err());
+    }
+
+    #[test]
+    fn test_empty_template() {
+        let a: Article = Article::parse("---\nlayout:page\ntitle:cats and dogs---\n").unwrap();
+        assert_eq!("", a.template);
+    }
+
+    #[test]
+    fn parse() {
+        let a: Article = Article::parse("---\nlayout:page\ntitle:cats and dogs---\ncat").unwrap();
+        assert_eq!("cat", a.template);
+        assert_eq!("page", a.config.layout);
+    }
+
+    #[test]
+    fn parse_template_muli_line() {
+        let a: Article =
+            Article::parse("---\nlayout:page\ntitle:cats and dogs---\ncat\ncat\ncat\ncat\ncat")
+                .unwrap();
+        assert_eq!("cat\ncat\ncat\ncat\ncat", a.template);
+        assert_eq!("page", a.config.layout);
+    }
+
+    #[test]
+    fn template_md_line() {
+        let a: Article =
+            Article::parse("---\nlayout:page\ntitle:cats and dogs---\ncat---dog").unwrap();
+        assert_eq!("cat---dog", a.template);
+        assert_eq!("page", a.config.layout);
+    }
+
+    #[test]
+    fn parse_with_real() {
+        let a: Article =
+            Article::parse("---\r\nlayout: page\r\ntitle:cats and dogs---\r\ncat").unwrap();
+        assert_eq!("cat", a.template);
+        assert_eq!("page", a.config.layout);
+    }
+
+    #[test]
+    fn more_than_three_dashes() {
+        assert_eq!(
+            Some(ParseError::InvalidHeader(
+                "only 3 dashes allowed for config header".to_string()
+            )),
+            Article::parse("----\r\nlayout:page\r\ntitle:cats and dogs-------\r\ncat").err()
+        );
+    }
 }
 
-#[test]
-fn test_empty_template() {
-    let a: Article = Article::parse("---\nlayout:page\ntitle:cats and dogs---\n").unwrap();
-    assert_eq!("", a.template);
+
+#[cfg(test)]
+mod pre_render {
+
+    use super::*;
+
+    use super::*;
+
+    // lazy didn't know how best to grab the type
+    type Partials = liquid::partials::EagerCompiler<liquid::partials::InMemorySource>;
+
+    fn gen_render_mocks (
+        md: &str,
+        mocks: Vec<(String, String)>,
+    ) -> Result<String, CustomError> {
+        let a: Article = Article::parse(md).unwrap();
+        let mut source = Partials::empty();
+
+        for (k, v) in mocks {
+            source.add(k, v);
+        }
+        let parser = liquid::ParserBuilder::with_stdlib()
+            .partials(source)
+            .build()?;
+
+        Ok(a.pre_render(&parser).template)
+    }
+
+    #[test]
+    fn markdown_and_page_varaibles() {
+        assert_eq!(
+            "<h1>cats and dogs</h1>\n<p>cats</p>\n".to_string(),
+            gen_render_mocks(
+                "---\r\nlayout: page\r\ntitle:cats and dogs---\r\n# {{page.config.title}}\ncats",
+                vec![("default".to_string(), "cats".to_string())]
+            ).unwrap()
+        );
+    }
+
+    #[test]
+    fn error_when_accessing_global() {
+        assert_eq!(
+            Some(CustomError("".to_string())),
+            gen_render_mocks(
+                "---\r\nlayout: page\r\ntitle:cats and dogs---\r\n# {{global}}\ncat",
+                vec![("default".to_string(), "cats".to_string())]
+            ).err()
+        );
+    }
+
 }
 
-#[test]
-fn test_parse() {
-    let a: Article = Article::parse("---\nlayout:page\ntitle:cats and dogs---\ncat").unwrap();
-    assert_eq!("<p>cat</p>\n", a.template);
-    assert_eq!("page", a.config.layout);
-}
-
-#[test]
-fn test_parse_template_muli_line() {
-    let a: Article =
-        Article::parse("---\nlayout:page\ntitle:cats and dogs---\ncat\ncat\ncat\ncat\ncat")
-            .unwrap();
-    assert_eq!("<p>cat\ncat\ncat\ncat\ncat</p>\n", a.template);
-    assert_eq!("page", a.config.layout);
-}
-
-#[test]
-fn test_template_md_line() {
-    let a: Article =
-        Article::parse("---\nlayout:page\ntitle:cats and dogs---\ncat---dog").unwrap();
-    assert_eq!("<p>cat---dog</p>\n", a.template);
-    assert_eq!("page", a.config.layout);
-}
-
-#[test]
-fn test_parse_with_real() {
-    let a: Article =
-        Article::parse("---\r\nlayout: page\r\ntitle:cats and dogs---\r\ncat").unwrap();
-    assert_eq!("<p>cat</p>\n", a.template);
-    assert_eq!("page", a.config.layout);
-}
-
-#[test]
-fn test_more_than_three_dashes() {
-    assert_eq!(
-        Some(ParseError::InvalidHeader(
-            "only 3 dashes allowed for config header".to_string()
-        )),
-        Article::parse("----\r\nlayout:page\r\ntitle:cats and dogs-------\r\ncat").err()
-    );
-}
 
 
 // read_to_string
@@ -340,7 +431,7 @@ mod render {
             .build()
             .unwrap();
 
-        a.render(global, &parser)
+        a.pre_render(&parser).render(global, &parser)
     }
 
     #[test]
@@ -411,7 +502,10 @@ mod render {
             gen_render_mocks(
                 "---\r\nlayout: page\r\ntitle:cats and dogs---\r\ncat",
                 vec![
-                    ("default".to_string(), "{% include 'header' %}{% include layout %}".to_string()),
+                    (
+                        "default".to_string(),
+                        "{% include 'header' %}{% include layout %}".to_string()
+                    ),
                     ("header".to_string(), "I am a header".to_string()),
                     ("page2".to_string(), "1".to_string()),
                     ("page3".to_string(), "2".to_string()),
@@ -432,14 +526,13 @@ mod render {
             "<h1>mole</h1><p>cat mole</p>\n".to_string(),
             gen_render_mocks(
                 "---\r\nlayout: page\r\ntitle:mole---\r\ncat {{page.config.title}}",
-                vec![(
-                    "default".to_string(),
-                    "<h1>{{page.config.title}}</h1>{% include layout %}".to_string()
-                ),
-                (
-                    "page".to_string(),
-                    "{{page.content}}".to_string()
-                )],
+                vec![
+                    (
+                        "default".to_string(),
+                        "<h1>{{page.config.title}}</h1>{% include layout %}".to_string()
+                    ),
+                    ("page".to_string(), "{{page.content}}".to_string())
+                ],
                 &liquid::object!({
                     "test": 1
                 })
@@ -448,5 +541,3 @@ mod render {
         );
     }
 }
-
-
