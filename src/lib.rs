@@ -13,60 +13,7 @@ enum ContentType {
     Markdown,
 }
 
-type Partials = liquid::partials::EagerCompiler<liquid::partials::InMemorySource>;
-
-/// we are using the eager compiler because:
-/// This would be useful in cases where:
-/// - Most partial-templates are used
-/// - Of the used partial-templates, they are generally used many times.
-///
-/// this is straight from: https://github.com/cobalt-org/cobalt.rs/blob/7fc4dd8f416e06f396906c0cbd7199b40be0944f/src/cobalt_model/template.rs
-/// however I have hacked away some bits of it
-/// NOTE: IO path handling won't be as good most likely
-fn load_partials_from_path(
-    root: &PathBuf,
-    source: &mut Partials,
-) -> Result<Vec<String>, error::CustomError> {
-    let mut v: Vec<String> = Vec::new();
-    for file_path in util::search_dir(&root, "html") {
-        let content = util::read_file(&file_path)?;
-        if let Some(rel_path) = util::path_file_name_to_string(&file_path) {
-            source.add(&rel_path, content);
-            v.push(rel_path);
-        }
-    }
-    Ok(v)
-}
-
-fn parse_file(
-    content: &str,
-    content_type: ContentType,
-) -> Result<parse::Article, parse::ParseError> {
-    let mut article = parse::Article::parse(content)?;
-    if content_type == ContentType::Markdown {
-        let parser = Parser::new_ext(&article.template, Options::empty());
-
-        // Write to String buffer.
-        let mut html_output = String::new();
-        html::push_html(&mut html_output, parser);
-
-        article.template = html_output;
-        return Ok(article);
-    }
-
-    // hack of an error message
-    Err(parse::ParseError::InvalidTemplate)
-}
-
-#[test]
-fn test_markdown() {
-    let a: parse::Article = parse_file(
-        "---\nlayout:page\ntitle:cats and dogs---\ncat",
-        ContentType::Markdown,
-    )
-    .unwrap();
-    assert_eq!("<p>cat</p>\n", a.template);
-}
+pub type Partials = liquid::partials::EagerCompiler<liquid::partials::InMemorySource>;
 
 #[derive(Debug)]
 pub struct Build {
