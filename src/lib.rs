@@ -3,7 +3,7 @@ use log::{error, info, warn};
 use std::fs::read_to_string;
 use std::fs::File;
 use std::io::prelude::*;
-use std::path::{PathBuf, Path};
+use std::path::{Path, PathBuf};
 mod error;
 mod util;
 
@@ -32,7 +32,7 @@ impl Build {
             layouts: Vec::new(),
             articles: Vec::new(),
             output: path,
-            parser: None
+            parser: None,
         }
     }
 
@@ -66,10 +66,6 @@ impl Build {
     }
 
     pub fn articles(mut self, temp: &Vec<PathBuf>) -> Self {
-        self.parser = Some(liquid::ParserBuilder::with_stdlib()
-        .partials(self.includes)
-        .build()
-        .unwrap());
         for dir in temp {
             info!("looking for markdown articles in {:?}", dir);
             if dir.exists() && dir.is_dir() {
@@ -80,7 +76,7 @@ impl Build {
                 } else {
                     for f in util::search_dir(&dir, "md") {
                         if let Ok(data) = util::read_file(&f) {
-                            self.articles.push(parse::Article::parse(&data).unwrap().pre_render(&self.parser.unwrap()));
+                            self.articles.push(parse::Article::parse(&data).unwrap());
                         } else {
                             // invalid format in the file
                             warn!("invalid file format for {:?}", dir);
@@ -105,7 +101,8 @@ impl Build {
                         match grass::from_string(data) {
                             Ok(css) => {
                                 let mut output_path = self.output.clone();
-                                output_path.push(Path::new(&util::path_file_name_to_string(&f).unwrap()));
+                                output_path
+                                    .push(Path::new(&util::path_file_name_to_string(&f).unwrap()));
                                 info!("writing css to {:?}", output_path);
 
                                 let mut file = File::create(output_path).unwrap();
@@ -127,7 +124,10 @@ impl Build {
 
     pub fn run(mut self) {
         let mut foo: Vec<&liquid::Object> = Vec::new();
-
+        let parser = liquid::ParserBuilder::with_stdlib()
+            .partials(self.includes)
+            .build()
+            .unwrap();
         for obj in &self.articles {
             foo.push(&obj.config_liquid);
         }
@@ -136,17 +136,19 @@ impl Build {
             "articles": foo,
         });
 
-        
         info!("{:?}", self.layouts);
 
         for obj in self.articles {
-            // write the result to p
-            let output: String = obj.render(&global, &self.parser.unwrap()).unwrap();
-
             //TODO: make this be the url
             let mut output_path = self.output.clone();
             output_path.push(PathBuf::from(&obj.url));
             info!("writing to {:?}", output_path);
+
+            let output: String = obj
+                .pre_render(&global, &parser, false)
+                .pre_render(&global, &parser, true)
+                .render(&global, &parser)
+                .unwrap();
 
             let mut file = File::create(output_path).unwrap();
             file.write_all(output.as_bytes()).unwrap();
