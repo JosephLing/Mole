@@ -9,8 +9,8 @@
 
 */
 use argh::FromArgs;
-use log::info;
-use std::path::PathBuf;
+use log::{info, error};
+use std::path::{Path, PathBuf};
 
 use mole;
 
@@ -50,7 +50,11 @@ impl InitCommand {
     description = "builds the static site from source"
 )]
 pub struct BuildCommand {
-    #[argh(option, default = "PathBuf::from(\"./_output/\")")]
+    #[argh(positional, default = "String::from(\"./\")")]
+    /// path to output too
+    current: String,
+
+    #[argh(option, default = "PathBuf::from(\"_output/\")")]
     /// path to output too
     dest: PathBuf,
 
@@ -77,13 +81,22 @@ pub struct BuildCommand {
 
 impl BuildCommand {
     pub fn run(self) {
-        info!("building");
-
-        mole::Build::new(self.dest)
-            .includes(&vec![self.include], false)
-            .includes(&vec![self.layouts], true)
-            .articles(&vec![self.source, self.articles])
-            .sass(&vec![self.scss])
-            .run();
+        let current = Path::new(&self.current);
+        if current.is_dir(){
+            info!("building");
+            mole::Build::new(current.join(self.dest))
+                .includes(&vec![current.join(self.include)], false)
+                .includes(&vec![current.join(self.layouts)], true)
+                .articles(&vec![
+                    current.join(self.articles),
+                    current.join(self.source),
+                    PathBuf::from(current),
+                ])
+                .sass(&vec![current.join(self.scss)])
+                .run();
+        }else{
+            error!("{:?} is not a directory so could not find any files to build from", current);
+        }
+        
     }
 }
