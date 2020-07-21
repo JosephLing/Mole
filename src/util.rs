@@ -1,7 +1,6 @@
 use std::fs::read_to_string;
 use std::path::PathBuf;
 
-
 use crate::error::CustomError;
 
 /// there is probably a nice library for this but ahow

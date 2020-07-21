@@ -9,16 +9,16 @@ mod util;
 
 pub type Partials = liquid::partials::EagerCompiler<liquid::partials::InMemorySource>;
 
-pub struct Build {
+pub struct Build<'a> {
     includes: Partials,
     articles: Vec<parse::Article>,
     layouts: Vec<String>,
-    output: PathBuf,
+    output: &'a PathBuf,
     parser: Option<liquid::Parser>,
 }
 
-impl Build {
-    pub fn new(output: PathBuf) -> Self {
+impl<'a> Build<'a> {
+    pub fn new(output: &'a PathBuf) -> Self {
         Build {
             includes: Partials::empty(),
             layouts: Vec::new(),
@@ -30,34 +30,31 @@ impl Build {
 
     /// note: includes are hard-coded as .html files
     /// in util:search_dir and util::path_file_name_to_string
-    pub fn includes(mut self, temp: &Vec<PathBuf>, layout: bool) -> Self {
-        for dir in temp {
-            if dir.exists() && dir.is_dir() {
-                for file_path in util::search_dir(&dir, "html") {
-                    //TODO: error handling!!!
-                    let content = util::read_file(&file_path).unwrap();
-                    if let Some(rel_path) = util::path_file_name_to_string(&file_path) {
-                        if layout {
-                            info!("new layout {:?}", rel_path);
-                        } else {
-                            info!("new include {:?}", rel_path);
-                        }
-                        self.includes.add(&rel_path, content);
-                        if layout {
-                            self.layouts.push(rel_path);
-                        }
+    pub fn includes(mut self, dir: &'a PathBuf, layout: bool) -> Self {
+        if dir.exists() && dir.is_dir() {
+            for file_path in util::search_dir(dir, "html") {
+                //TODO: error handling!!!
+                let content = util::read_file(&file_path).unwrap();
+                if let Some(rel_path) = util::path_file_name_to_string(&file_path) {
+                    if layout {
+                        info!("new layout {:?}", rel_path);
+                    } else {
+                        info!("new include {:?}", rel_path);
+                    }
+                    self.includes.add(&rel_path, content);
+                    if layout {
+                        self.layouts.push(rel_path);
                     }
                 }
-
-            // info!("found {:?} templates", v.len());
-            } else {
-                error!("{:?} is not a path or directory", &dir);
             }
+        // info!("found {:?} templates", v.len());
+        } else {
+            error!("{:?} is not a path or directory", &dir);
         }
         self
     }
 
-    pub fn articles(mut self, temp: &Vec<PathBuf>) -> Self {
+    pub fn articles(mut self, temp: &'a Vec<&'a PathBuf>) -> Self {
         for dir in temp {
             info!("looking for markdown articles in {:?}", dir);
             if dir.exists() && dir.is_dir() {
@@ -84,37 +81,35 @@ impl Build {
     }
 
     /// TODO: ignore _files
-    pub fn sass(self, temp: &Vec<PathBuf>) -> Self {
-        for dir in temp {
-            if dir.exists() && dir.is_dir() {
-                for f in util::search_dir(dir, "scss") {
-                    info!("{:?}", f);
-                    if let Ok(data) = read_to_string(&f) {
-                        match grass::from_string(data) {
-                            Ok(css) => {
-                                let mut output_path = self.output.clone();
-                                output_path
-                                    .push(Path::new(&util::path_file_name_to_string(&f).unwrap()));
-                                info!("writing css to {:?}", output_path);
+    pub fn sass(self, dir: &'a PathBuf) -> Self {
+        if dir.exists() && dir.is_dir() {
+            for f in util::search_dir(dir, "scss") {
+                info!("{:?}", f);
+                if let Ok(data) = read_to_string(&f) {
+                    match grass::from_string(data) {
+                        Ok(css) => {
+                            let mut output_path = self.output.clone();
+                            output_path
+                                .push(Path::new(&util::path_file_name_to_string(&f).unwrap()));
+                            info!("writing css to {:?}", output_path);
 
-                                let mut file = File::create(output_path).unwrap();
-                                file.write_all(css.as_bytes()).unwrap();
-                                //TODO: write to disk
-                            }
-                            Err(e) => warn!("parsing sccs {:?} caused {:?}", f, e),
+                            let mut file = File::create(output_path).unwrap();
+                            file.write_all(css.as_bytes()).unwrap();
+                            //TODO: write to disk
                         }
-                    } else {
-                        warn!("soemthing went wrong");
+                        Err(e) => warn!("parsing sccs {:?} caused {:?}", f, e),
                     }
+                } else {
+                    warn!("soemthing went wrong");
                 }
-            } else {
-                warn!("{:?} is not a path or directory, .css files will be copied across but no .sccs compiling will happen", dir);
             }
+        } else {
+            warn!("{:?} is not a path or directory, .css files will be copied across but no .sccs compiling will happen", dir);
         }
         self
     }
 
-    pub fn run(mut self) {
+    pub fn run(self) {
         let mut foo: Vec<&liquid::Object> = Vec::new();
         let parser = liquid::ParserBuilder::with_stdlib()
             .partials(self.includes)
