@@ -410,6 +410,7 @@ mod pre_render {
     }
 
     // we want some way of stopping an article iterating over all the articles or at least itself
+    #[ignore = "awaiting error reporting"]
     #[test]
     fn error_when_article_accesses_itself() {
         assert_eq!(

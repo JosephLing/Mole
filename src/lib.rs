@@ -17,21 +17,13 @@ pub struct Build {
     parser: Option<liquid::Parser>,
 }
 
-/**
-build::new("_output/")
-    .includes(vec![self.include, self.layouts])
-    .articles(vec![self.source, self.articles])
-    .sass(self.sass, vec![self.load_paths])
-    .compile(self.dest)
-*/
-
 impl Build {
-    pub fn new(path: PathBuf) -> Self {
+    pub fn new(output: PathBuf) -> Self {
         Build {
             includes: Partials::empty(),
             layouts: Vec::new(),
             articles: Vec::new(),
-            output: path,
+            output,
             parser: None,
         }
     }
@@ -41,7 +33,7 @@ impl Build {
     pub fn includes(mut self, temp: &Vec<PathBuf>, layout: bool) -> Self {
         for dir in temp {
             if dir.exists() && dir.is_dir() {
-                for file_path in util::search_dir(dir, "html") {
+                for file_path in util::search_dir(&dir, "html") {
                     //TODO: error handling!!!
                     let content = util::read_file(&file_path).unwrap();
                     if let Some(rel_path) = util::path_file_name_to_string(&file_path) {
@@ -59,7 +51,7 @@ impl Build {
 
             // info!("found {:?} templates", v.len());
             } else {
-                error!("{:?} is not a path or directory", dir);
+                error!("{:?} is not a path or directory", &dir);
             }
         }
         self
