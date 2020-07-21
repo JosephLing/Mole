@@ -234,7 +234,12 @@ impl Article {
         Err(ParseError::InvalidTemplate)
     }
 
-    pub fn pre_render(mut self, liquidParser: &liquid::Parser) -> Self {
+    pub fn pre_render(
+        mut self,
+        globals: &liquid::Object,
+        liquidParser: &liquid::Parser,
+        md: bool,
+    ) -> Self {
         // hack do proper error handling!!!
 
         println!("{:?}", self.config_liquid);
@@ -242,20 +247,22 @@ impl Article {
             .parse(&self.template)
             .unwrap()
             .render(&liquid::object!({
-                "page": self.config_liquid
-                // "page": liquid::object!({
-                //     "title": "cats and dogs"
-                // })
+                "global": globals,
+                "page": self.config_liquid,
+                "layout": self.config.layout
             }))
             .unwrap();
 
-        let parser = Parser::new_ext(&template, Options::empty());
+        self.template = if md {
+            let parser = Parser::new_ext(&template, Options::empty());
 
-        // Write to String buffer.
-        let mut template = String::new();
-        html::push_html(&mut template, parser);
-
-        self.template = template;
+            // Write to String buffer.
+            let mut template = String::new();
+            html::push_html(&mut template, parser);
+            template
+        } else {
+            template
+        };
 
         self.config_liquid = liquid::object!({
             "content": self.template,
@@ -288,7 +295,7 @@ impl Article {
         Ok(template.render(&liquid::object!({
             "global": globals,
             "page": self.config_liquid,
-            "layout": "page"
+            "layout": self.config.layout
         }))?)
     }
 }
@@ -352,21 +359,15 @@ mod parse {
     }
 }
 
-
 #[cfg(test)]
 mod pre_render {
-
-    use super::*;
 
     use super::*;
 
     // lazy didn't know how best to grab the type
     type Partials = liquid::partials::EagerCompiler<liquid::partials::InMemorySource>;
 
-    fn gen_render_mocks (
-        md: &str,
-        mocks: Vec<(String, String)>,
-    ) -> Result<String, CustomError> {
+    fn gen_render_mocks(md: &str, mocks: Vec<(String, String)>) -> Result<String, CustomError> {
         let a: Article = Article::parse(md).unwrap();
         let mut source = Partials::empty();
 
@@ -377,7 +378,11 @@ mod pre_render {
             .partials(source)
             .build()?;
 
-        Ok(a.pre_render(&parser).template)
+        Ok(
+            a.pre_render(&liquid::object!({ "articles": vec![md] }), &parser, false)
+                .pre_render(&liquid::object!({ "articles": vec![md] }), &parser, true)
+                .template,
+        )
     }
 
     #[test]
@@ -387,24 +392,36 @@ mod pre_render {
             gen_render_mocks(
                 "---\r\nlayout: page\r\ntitle:cats and dogs---\r\n# {{page.config.title}}\ncats",
                 vec![("default".to_string(), "cats".to_string())]
-            ).unwrap()
+            )
+            .unwrap()
         );
     }
 
     #[test]
-    fn error_when_accessing_global() {
+    fn accessing_global_varaible() {
         assert_eq!(
-            Some(CustomError("".to_string())),
+            "<h1>cats and dogs</h1>\n<p>cats</p>\n".to_string(),
             gen_render_mocks(
-                "---\r\nlayout: page\r\ntitle:cats and dogs---\r\n# {{global}}\ncat",
+                "---\r\nlayout: page\r\ntitle:cats and dogs---\r\n# {{page.config.title}}\ncats",
                 vec![("default".to_string(), "cats".to_string())]
-            ).err()
+            )
+            .unwrap()
         );
     }
 
+    // we want some way of stopping an article iterating over all the articles or at least itself
+    #[test]
+    fn error_when_article_accesses_itself() {
+        assert_eq!(
+            Some(CustomError("".to_string())),
+            gen_render_mocks(
+                "---\r\nlayout: page\r\ntitle:cats and dogs---\r\n# {{global.articles}}\ncat",
+                vec![("default".to_string(), "cats".to_string())]
+            )
+            .err()
+        );
+    }
 }
-
-
 
 // read_to_string
 // use std::fs::read_to_string;
@@ -431,7 +448,8 @@ mod render {
             .build()
             .unwrap();
 
-        a.pre_render(&parser).render(global, &parser)
+        a.pre_render(&liquid::object!({}), &parser, true)
+            .render(global, &parser)
     }
 
     #[test]
@@ -483,6 +501,24 @@ mod render {
             "<h1>cats and dogs</h1><p>cat</p>\n".to_string(),
             gen_render_mocks(
                 "---\r\nlayout: page\r\ntitle:cats and dogs---\r\ncat",
+                vec![(
+                    "default".to_string(),
+                    "<h1>{{page.config.title}}</h1>{{page.content}}".to_string()
+                )],
+                &liquid::object!({
+                    "test": 1
+                })
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn render_content_with_html_in_md() {
+        assert_eq!(
+            "<h1>cats and dogs</h1><p>cat<span>hello world</span></p>\n".to_string(),
+            gen_render_mocks(
+                "---\r\nlayout: page\r\ntitle:cats and dogs---\r\ncat<span>hello world</span>",
                 vec![(
                     "default".to_string(),
                     "<h1>{{page.config.title}}</h1>{{page.content}}".to_string()
