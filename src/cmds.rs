@@ -10,12 +10,15 @@
 */
 use argh::FromArgs;
 use log::{error, info};
-use notify::{Watcher, RecursiveMode, watcher};
-use std::path::{Path, PathBuf};
-use std::sync::mpsc::channel;
-use std::time::Duration;
-
 use mole;
+use notify::{watcher, RecursiveMode, Watcher};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process;
+use std::sync::mpsc::channel;
+use std::thread;
+use std::time::Duration;
+use tiny_http::{Request, Response, Server};
 
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand)]
@@ -64,6 +67,75 @@ impl InitCommand {
     }
 }
 
+// largely copied from cobalt-org/cobalt.rs/src/bin/serve.rs as it's under MIT
+fn static_file_handler(dest: &Path, req: Request) -> Result<(), mole::error::CustomError> {
+    // grab the requested path
+    let mut req_path = req.url().to_string();
+
+    // strip off any querystrings so path.is_file() matches and doesn't stick index.html on the end
+    // of the path (querystrings often used for cachebusting)
+    if let Some(position) = req_path.rfind('?') {
+        req_path.truncate(position);
+    }
+
+    // find the path of the file in the local system
+    // (this gets rid of the '/' in `p`, so the `join()` will not replace the path)
+    let path = dest.to_path_buf().join(Path::new(&req_path[1..]));
+
+    let serve_path = if path.is_file() {
+        // try to point the serve path to `path` if it corresponds to a file
+        path
+    } else {
+        // try to point the serve path into a "index.html" file in the requested
+        // path
+        path.join("index.html")
+    };
+
+    if serve_path.exists() {
+        let file = fs::File::open(&serve_path)?;
+        let content_type =
+            if let Some(mime) = mime_guess::MimeGuess::from_path(&serve_path).first_raw() {
+                mime.as_bytes()
+            } else {
+                &b"text/html;"[..]
+            };
+        req.respond(
+            Response::from_file(file).with_header(
+                tiny_http::Header::from_bytes(&b"Content-Type"[..], content_type)
+                    .expect("Invalid mime type for content found"),
+            ),
+        )?;
+    } else {
+        req.respond(
+            Response::from_string("<h1>404 page, couldn't find the anything...</h1>")
+                .with_status_code(404)
+                .with_header(
+                    tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/html;"[..])
+                        .unwrap(),
+                ),
+        )?;
+    }
+
+    Ok(())
+}
+
+// largely copied from cobalt-org/cobalt.rs/src/bin/serve.rs as it's under MIT
+fn serve(dest: &Path, ip: &str) -> Result<(), mole::error::CustomError> {
+    info!("Serving {:?} through static file server", dest);
+    info!("Server Listening on http://{}", &ip);
+    info!("Ctrl-c to stop the server");
+
+    // attempts to create a server
+    let server = Server::http(ip).map_err(|e| mole::error::CustomError(e.to_string()))?;
+
+    for request in server.incoming_requests() {
+        if let Err(e) = static_file_handler(&dest, request) {
+            error!("{:?}", e);
+        }
+    }
+    Ok(())
+}
+
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(
     subcommand,
@@ -106,7 +178,6 @@ pub struct BuildCommand {
 
 impl BuildCommand {
     pub fn run(mut self) {
-        error!("{:?} {:?}", self.watch, self.serve);
         let current = Path::new(&self.current);
         self.dest = current.join(self.dest);
         self.include = current.join(self.include);
@@ -122,9 +193,24 @@ impl BuildCommand {
                 .sass(&self.scss)
                 .run();
 
-            if self.serve {}
+            if self.serve {
+                let dest = Path::new("").join(&self.dest);
+                if self.watch {
+                    thread::spawn(move || {
+                        if let Err(e) = serve(&dest, "127.0.0.1:4000") {
+                            error!("{:?}", e);
+                        }
+                        process::exit(1);
+                    });
+                } else {
+                    if let Err(e) = serve(&dest, "127.0.0.1:4000") {
+                        error!("{:?}", e);
+                    }
+                }
+            }
 
             if self.watch {
+                info!("watching for changes in {:?}", self.current);
                 // Create a channel to receive the events.
                 let (tx, rx) = channel();
 

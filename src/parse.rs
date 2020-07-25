@@ -242,7 +242,6 @@ impl Article {
     ) -> Self {
         // hack do proper error handling!!!
 
-        println!("{:?}", self.config_liquid);
         let template = liquidParser
             .parse(&self.template)
             .unwrap()
