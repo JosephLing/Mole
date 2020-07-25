@@ -14,7 +14,6 @@ pub struct Build<'a> {
     articles: Vec<parse::Article>,
     layouts: Vec<String>,
     output: &'a PathBuf,
-    parser: Option<liquid::Parser>,
 }
 
 impl<'a> Build<'a> {
@@ -24,7 +23,6 @@ impl<'a> Build<'a> {
             layouts: Vec::new(),
             articles: Vec::new(),
             output,
-            parser: None,
         }
     }
 
