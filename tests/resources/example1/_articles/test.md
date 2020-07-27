@@ -1,6 +1,6 @@
 ---
 layout:page
-title: give me all the dreamies in 2021
+title: content & foo
 description: hello world
 ---
 

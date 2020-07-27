@@ -45,13 +45,22 @@ pub struct InitCommand {
     #[argh(positional, default = "String::from(\"./\")")]
     /// directory to initailize all the site
     current: String,
+
+    #[argh(switch)]
+    /// version of the tool
+    version: bool,
 }
 
 impl InitCommand {
     pub fn run(self) {
+        if self.version {
+            info!("version: {:?}", env!("CARGO_PKG_VERSION"));
+        }
+
         let current = Path::new(&self.current);
         if current.is_dir() {
             info!("init");
+
         /* we need to write:
             - _layouts
             - _includes
@@ -167,17 +176,24 @@ pub struct BuildCommand {
     /// path from 'source' to articles folder
     scss: PathBuf,
 
-    #[argh(option, default = "false")]
+    #[argh(switch)]
     /// whether or not to check the project for changes and if changed rebuild
     watch: bool,
 
-    #[argh(option, default = "false")]
+    #[argh(switch)]
     /// whether or not to spawn a server to show the website on
     serve: bool,
+
+    #[argh(switch)]
+    /// version of the tool
+    version: bool,
 }
 
 impl BuildCommand {
     pub fn run(mut self) {
+        if self.version {
+            info!("version: {:?}", env!("CARGO_PKG_VERSION"));
+        }
         let current = Path::new(&self.current);
         self.dest = current.join(self.dest);
         self.include = current.join(self.include);

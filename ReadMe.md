@@ -57,15 +57,17 @@ These maybe a little out-dated check in `src/parser.rs` for the latests....
     global:{
         articles: []
     },
-    config: {
-        title,
-        description,
-        tags,
-        categories,
-        visible,
-        layout
-    },
-    url
+    page: {
+      config: {
+          title,
+          description,
+          tags,
+          categories,
+          visible,
+          layout
+      },
+      url
+    }
 }
 ```
 
@@ -96,12 +98,12 @@ Example:
 
 ### serve
 
-`mole build --serve true`
+`mole build --serve`
 
 Spins up a mini web server on localhost at port 4000 so `127.0.0.1:4000` (hard coded).
 
 ### watch
-`mole build --watch true`
+`mole build --watch`
 Rebuilds every time there is a change, this feature though is still WIP.
 
 

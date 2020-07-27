@@ -206,7 +206,7 @@ impl Article {
                     format!("{}.html", config.title)
                 } else {
                     config.permalink.clone() // messy.... argh!!!
-                };
+                }.replace(" ", "%20");
                 let config_liquid = liquid::object!({
                     "content": template,
                     "config": liquid::object!({
