@@ -4,7 +4,7 @@ use std::fs::read_to_string;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
-mod error;
+pub mod error;
 mod util;
 
 pub type Partials = liquid::partials::EagerCompiler<liquid::partials::InMemorySource>;

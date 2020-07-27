@@ -22,15 +22,13 @@ WIP:
 
 
 ## todo:
-- generating the correct output paths
+- generating the correct output paths (need to add %20 to them as well maybe.... or handle that properly in the `serve` feature)
 - javascript and images support
 
 ## quality of life:
 - commands for:
   - clean
   - init
-  - serve
-
 
 ## advance
 - serve up a mini http server
@@ -53,6 +51,7 @@ We are using the grass library which is nearly feature complete but missing @use
 
 ## varaibles
 
+These maybe a little out-dated check in `src/parser.rs` for the latests....
 ```
 {
     global:{
@@ -72,15 +71,39 @@ We are using the grass library which is nearly feature complete but missing @use
 
 e.g. {{config.title}}
 
+You can do:
+```
+{% for art in global.articles %}
+  {{art.content}}
+{% endfor %}
+```
+To cause a recursive pattern of posts but that will include the current post. Is currently only fixed to do 2 levels of recursion so it would be best to wrap in an if statement `{{% if art.title != config.tilte %}}`.
+
 ## command line
 
 `mole build`
 
 - build: runs from the current directory 
   - `_output/` to the path
-  - `_source/` and `_articles/` for all the posts (*.html)
+  - `_articles/` for all the posts (*.html)
   - `_include/` and `_layout/` will be all the liquid includes (*.md)
   - `_css/` for sass (*.sass)
+
+
+Example:
+`mole build tests\resources\example1`
+
+
+### serve
+
+`mole build --serve true`
+
+Spins up a mini web server on localhost at port 4000 so `127.0.0.1:4000` (hard coded).
+
+### watch
+`mole build --watch true`
+Rebuilds every time there is a change, this feature though is still WIP.
+
 
 ## render pipeline
 - includes and layouts to generate templates
