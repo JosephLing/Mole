@@ -7,6 +7,10 @@ A side project to able to learn Rust with a real world project.
 
 
 WIP:
+- needs proper integeration testing!!!
+  - as well as benchmarking to roughly work out how fast it runs, as adding in the categories and tags slowed down the build time it seemd :( although the good news is that is hacky and un-optimised so it is allowed to be slow. Just need some tests in place to make sure no major regressions are made when speeding it up....
+
+
 - render support for jekyll in articles, currently works! 
   - even allows rendering other articles in an article kind of... and it's not really the most efficent method to do it. As we have to parse the `.pre_render().pre_render()` in order to evaluate it properly.
   - also the unit tests in parse are good but it is getting dangerously close to testing the mock not testing the code.... therefore integeration tests are needed!
@@ -22,7 +26,6 @@ WIP:
 
 
 ## todo:
-- generating the correct output paths (need to add %20 to them as well maybe.... or handle that properly in the `serve` feature)
 - javascript and images support
 
 ## quality of life:
@@ -31,10 +34,7 @@ WIP:
   - init
 
 ## advance
-- serve up a mini http server
-  - probably use `tiny_http`
 - parallism of parsing files?
-- tags and categories
 - pagination maybe but not as important maybe....
 
 
@@ -55,7 +55,9 @@ These maybe a little out-dated check in `src/parser.rs` for the latests....
 ```
 {
     global:{
-        articles: []
+        articles: [],
+        tags: <cat, [urls]>,
+        categories: <cat, [urls]>
     },
     page: {
       config: {

@@ -18,8 +18,8 @@ pub struct Config {
     pub title: String,
     pub description: Option<String>,
     pub permalink: String,
-    pub categories: Option<Vec<String>>,
-    pub tags: Option<Vec<String>>,
+    pub categories: Vec<String>,
+    pub tags: Vec<String>,
     pub visible: bool,
 }
 
@@ -78,9 +78,16 @@ impl Config {
                     } else {
                         String::from("")
                     },
-                    // TODO: these as lists would be really nice.... potentailly thinking about spinning out the json example again maybe....
-                    categories: None,
-                    tags: None,
+                    categories: if let Some(categories) = pieces.get("categories") {
+                        categories.split(",").map(|e| e.trim().to_string()).collect()
+                    } else {
+                        Vec::new()
+                    },
+                    tags: if let Some(tags) = pieces.get("tags") {
+                        tags.split(",").map(|e| e.trim().to_string()).collect()
+                    } else {
+                        Vec::new()
+                    },
                     visible: match pieces.get("visible") {
                         Some(b) => match b.parse::<bool>() {
                             Ok(b) => b,
@@ -131,8 +138,8 @@ fn test_config() {
             title: "hello world".to_string(),
             description: None,
             permalink: "".to_string(),
-            categories: None,
-            tags: None,
+            categories: Vec::new(),
+            tags: Vec::new(),
             visible: true
         },
         Config::parse("layout:page\ntitle:hello world").unwrap()
@@ -148,8 +155,8 @@ fn test_config_carrige_returns() {
             title: "hello world".to_string(),
             description: None,
             permalink: "".to_string(),
-            categories: None,
-            tags: None,
+            categories: Vec::new(),
+            tags: Vec::new(),
             visible: true
         },
         Config::parse("layout:page\r\ntitle:hello world").unwrap()

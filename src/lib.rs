@@ -1,4 +1,5 @@
 pub mod parse;
+use std::collections::HashMap;
 use log::{error, info, warn};
 use std::fs::read_to_string;
 use std::fs::File;
@@ -108,17 +109,31 @@ impl<'a> Build<'a> {
     }
 
     pub fn run(self) {
-        let mut foo: Vec<&liquid::Object> = Vec::new();
+        let mut global_articles: Vec<&liquid::Object> = Vec::new();
+        let mut global_tags: HashMap<&str, Vec<&str>> = HashMap::new();
+        let mut global_cats: HashMap<&str, Vec<&str>> = HashMap::new();
+
         let parser = liquid::ParserBuilder::with_stdlib()
             .partials(self.includes)
             .build()
             .unwrap();
         for obj in &self.articles {
-            foo.push(&obj.config_liquid);
+            // global_tags.push(&obj.config_liquid.tags);
+            // global_cats.push(&obj.config_liquid.cats);
+            global_articles.push(&obj.config_liquid);
+            for tag in &obj.config.tags{
+                global_tags.entry(tag).or_insert(Vec::new()).push(&obj.url);
+            }
+
+            for cat in &obj.config.categories{
+                global_cats.entry(cat).or_insert(Vec::new()).push(&obj.url);
+            }
         }
 
         let global = liquid::object!({
-            "articles": foo,
+            "articles": global_articles,
+            "tags": global_tags,
+            "cats": global_cats,
         });
 
         info!("{:?}", self.layouts);

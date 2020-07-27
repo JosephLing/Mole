@@ -2,6 +2,7 @@
 layout:page
 title: content & foo
 description: hello world
+tags: programming, testing, food
 ---
 
 - d
@@ -9,7 +10,7 @@ description: hello world
 - c
 
 meta data {{page.config.description}} base layout: {{page.config.layout}}
-
+{{page.config.tags}}
 
 
 # page description
