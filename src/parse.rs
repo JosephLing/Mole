@@ -3,12 +3,25 @@ use log::warn;
 use pulldown_cmark::{html, Options, Parser};
 use std::collections::HashMap;
 
-#[derive(Debug, PartialEq)]
+type ErrorMessage = String;
+
+#[derive(PartialEq)]
 pub enum ParseError {
-    Empty,
-    NoHeader,
-    InvalidHeader(String), // we will want more info here
-    InvalidTemplate,       // more info on this
+    InvalidKey(ErrorMessage),
+    EmptyValue(ErrorMessage),
+    InvalidValue(ErrorMessage),
+    InvalidConfig(ErrorMessage),
+}
+
+impl std::fmt::Debug for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            ParseError::InvalidKey(s) => write!(f, "Invalid key: {}\n", s),
+            ParseError::EmptyValue(s) => write!(f, "Empty value\n{}\n", s),
+            ParseError::InvalidValue(s) => write!(f, "Invalid value: {}\n", s),
+            ParseError::InvalidConfig(s) => write!(f, "Invalid configuration: {}\n", s),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -16,152 +29,284 @@ pub struct Config {
     pub layout: String,
     pub base_layout: String,
     pub title: String,
-    pub description: Option<String>,
+    pub description: String,
     pub permalink: String,
     pub categories: Vec<String>,
     pub tags: Vec<String>,
     pub visible: bool,
 }
 
-impl Config {
-    /// For example:
-    ///
-    /// layout: post
-    /// title:  Test2
-    /// description: asdf
-    ///
-    /// TODO these:
-    /// categories: programming
-    /// tags: [github, github-pages, jekyll]
-
-    // Key factor is that they can read in any order as long as they exists
-    fn parse(data: &str) -> Result<Config, ParseError> {
-        // going with simple to code and hopefully fast instead of fancy and dynamic
-
-        let mut pieces: HashMap<String, String> = HashMap::new();
-        for line in data.split("\n") {
-            let line = line.trim();
-            if !line.is_empty() {
-                let temp: Vec<&str> = line.split(":").collect();
-                if let Some(key) = temp.get(0) {
-                    if let Some(value) = temp.get(1) {
-                        pieces.insert(key.to_string(), value.trim().to_string());
-                    } else {
-                        warn!("no value was found for {:?} in line {:?}", key, line);
-                    }
-                } else {
-                    warn!("no key value pair found on {:?}", line);
-                }
-            }
-        }
-        if let Some(layout) = pieces.get("layout") {
-            if let Some(title) = pieces.get("title") {
-                // duplicate code ugh...
-                // one potential solution would be to use serde_yaml but that's yaml....
-                // these could be matches
-                Ok(Config {
-                    // TODO: how do we handle spaces at the start of layout and title e.g. layout: page won't match "page" as it would be " page"
-                    layout: layout.to_string(),
-                    title: title.to_string(),
-                    description: if let Some(description) = pieces.get("description") {
-                        Some(description.to_string())
-                    } else {
-                        None
-                    },
-                    // TODO: read in base_layout as an option
-                    base_layout: match pieces.get("base_layout") {
-                        Some(b) => b.to_string(),
-                        None => "default".to_string(),
-                    },
-                    permalink: if let Some(permalink) = pieces.get("permalink") {
-                        permalink.to_string()
-                    } else {
-                        String::from("")
-                    },
-                    categories: if let Some(categories) = pieces.get("categories") {
-                        categories.split(",").map(|e| e.trim().to_string()).collect()
-                    } else {
-                        Vec::new()
-                    },
-                    tags: if let Some(tags) = pieces.get("tags") {
-                        tags.split(",").map(|e| e.trim().to_string()).collect()
-                    } else {
-                        Vec::new()
-                    },
-                    visible: match pieces.get("visible") {
-                        Some(b) => match b.parse::<bool>() {
-                            Ok(b) => b,
-                            Err(_) => true,
-                        },
-                        None => true,
-                    },
-                })
-            } else {
-                Err(ParseError::InvalidHeader(String::from(
-                    "no title found in config",
-                )))
-            }
-        } else {
-            Err(ParseError::InvalidHeader(String::from(
-                "no layout found in config",
-            )))
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            layout: String::from(""),
+            base_layout: String::from(""),
+            title: String::from(""),
+            description: String::from(""),
+            permalink: String::from(""),
+            categories: Vec::new(),
+            tags: Vec::new(),
+            visible: false,
         }
     }
 }
 
-#[test]
-fn test_config_layout() {
-    assert_eq!(
-        Some(ParseError::InvalidHeader(String::from(
-            "no layout found in config"
+impl Config {
+    fn is_valid(&self) -> bool {
+        !(self.layout.is_empty() || self.title.is_empty())
+    }
+}
+
+fn parse_error_message(
+    message: &str,
+    path: &str,
+    line: &str,
+    start: usize,
+    end: usize,
+    lineno: usize,
+) -> ErrorMessage {
+    let spacing = if lineno < 99 {
+        "  "
+    } else if lineno < 999 {
+        "   "
+    } else {
+        "    "
+    };
+
+    let mut underline = String::new();
+    for _i in 0..start {
+        underline.push(' ');
+    }
+
+    for _i in start..end {
+        underline.push('^');
+    }
+
+    let msg : ErrorMessage = format!(
+        "\n{s   } --> {p} {n}:{start}\n{s   } |\n{n:w$} | {line}\n{s   } | {underline}\n{s   } |\n{s  }{m}",
+        p = path,
+        line = line,
+        s = spacing,
+        w = spacing.len(),
+        underline = underline,
+        n = lineno,
+        start = start,
+        m = message
+    )
+    .to_string();
+
+    msg
+}
+
+fn parse_key<'a>(
+    rest: &'a str,
+    path: &str,
+    line: &str,
+    lineno: usize,
+) -> Result<(&'a str, &'a str), ParseError> {
+    if rest.is_empty() {
+        return Err(ParseError::EmptyValue(parse_error_message(
+            "expected name of key",
+            path,
+            line,
+            line.len(),
+            line.len() + 5,
+            lineno,
+        )));
+    }
+    if let Some(index) = rest.find(":") {
+        return Ok((&rest[0..index], &rest[index + 1..]));
+    }
+    Err(ParseError::InvalidKey(parse_error_message(
+        "no semicolon found",
+        path,
+        line,
+        line.len(),
+        line.len()+1,
+        lineno,
+    )))
+}
+
+fn parse_value_string<'a>(
+    rest: &'a str,
+    path: &str,
+    line: &str,
+    lineno: usize,
+) -> Result<&'a str, ParseError> {
+    let rest = rest.trim();
+    if rest.is_empty() {
+        return Err(ParseError::EmptyValue(parse_error_message(
+            "empty value",
+            path,
+            line,
+            line.len(),
+            line.len() + 5,
+            lineno,
+        )));
+    }
+    if rest == "---" {
+        return Err(ParseError::InvalidValue(parse_error_message(
+            "found '---' can't use configuration start and end identifier as a value",
+            path,
+            line,
+            line.len() - 3,
+            line.len(),
+            lineno,
+        )));
+    }
+    Ok(rest)
+}
+
+fn parse_value_boolean(
+    rest: &str,
+    path: &str,
+    line: &str,
+    lineno: usize,
+) -> Result<bool, ParseError> {
+    match rest.parse::<bool>() {
+        Ok(b) => Ok(b),
+        Err(_) => Err(ParseError::InvalidValue(parse_error_message(
+            "",
+            path,
+            line,
+            line.len() - rest.len(),
+            line.len(),
+            lineno,
         ))),
-        Config::parse("").err()
-    );
+    }
 }
 
-#[test]
-fn test_config_title() {
-    assert_eq!(
-        Some(ParseError::InvalidHeader(String::from(
-            "no title found in config"
-        ))),
-        Config::parse("layout: page").err()
-    );
+fn parse_value_list(
+    rest: &str,
+    path: &str,
+    line: &str,
+    lineno: usize,
+) -> Result<Vec<String>, ParseError> {
+    if rest.is_empty() {
+        return Err(ParseError::EmptyValue(parse_error_message(
+            "empty",
+            path,
+            line,
+            line.len(),
+            line.len() + 5,
+            lineno,
+        )));
+    }
+    let mut list: Vec<String> = Vec::new();
+    let mut index = 0;
+    let mut expect = false;
+    while !rest[index..].is_empty() {
+        // consume [ and ] but only if they are present
+        if let Some(new_index) = rest[index..].find(",") {
+            expect = true;
+            list.push(parse_value_string(&rest[index..new_index], path, line, lineno)?.to_string());
+            index = new_index + 1;
+        } else {
+            // if it is empty between index
+            list.push(parse_value_string(&rest[index..], path, line, lineno)?.to_string());
+            index = rest.len();
+            expect = false;
+        }
+    }
+    if expect {
+        return Err(ParseError::InvalidValue(parse_error_message(
+            "value expected after semi-colon",
+            path,
+            line,
+            line.len(),
+            line.len()+5,
+            lineno,
+        )));
+    }
+    Ok(list)
 }
 
-#[test]
-fn test_config() {
-    assert_eq!(
-        Config {
-            layout: "page".to_string(),
-            base_layout: "default".to_string(),
-            title: "hello world".to_string(),
-            description: None,
-            permalink: "".to_string(),
-            categories: Vec::new(),
-            tags: Vec::new(),
-            visible: true
-        },
-        Config::parse("layout:page\ntitle:hello world").unwrap()
-    );
+/// BufReader or read_to_string() is the key api choice (mmap alternatively as well)
+/// the difficulty getting the rest of the file after parsing the config
+/// BufReader<R> can improve the speed of programs that make small and repeated read calls to the same file or network socket.
+/// It does not help when reading very large amounts at once, or reading just one or a few times.
+/// It also provides no advantage when reading from a source that is already in memory, like a Vec<u8>.
+pub fn parse(data: &str) -> Result<(Config, String), ParseError> {
+    let mut found_config = false;
+    let mut line_n = 1;
+    let mut config = Config::default();
+    let lines = data.lines();
+    let mut body = "".to_string();
+    let path = "test.txt";
+    let mut reached_end = false;
+    for line in lines {
+        if !found_config && line == "---" {
+            found_config = true;
+        } else if found_config  && line == "---" {
+            reached_end = true;
+            found_config = false;
+        }else if reached_end{
+            body += line;
+            body += "\n";
+        } else if found_config{
+            let (key, rest) = parse_key(&line, path, line, line_n)?;
+            match key {
+                // match each thing but then need to work out how to map it....
+                // maybe look into the from string implementation???
+                "layout" => {
+                    config.layout = parse_value_string(rest.trim(), path, line, line_n)?.to_string()
+                }
+                "base_layout" => {
+                    config.base_layout =
+                        parse_value_string(rest.trim(), path, line, line_n)?.to_string()
+                }
+                "title" => {
+                    config.title = parse_value_string(rest.trim(), path, line, line_n)?.to_string()
+                }
+                "description" => {
+                    config.description = parse_value_string(rest.trim(), path, line, line_n)?.to_string()
+                }
+                "permalink" => {
+                    config.permalink =
+                        parse_value_string(rest.trim(), path, line, line_n)?.to_string()
+                }
+                "categories" => {
+                    config.categories = parse_value_list(rest.trim(), path, line, line_n)?
+                }
+                "tags" => config.tags = parse_value_list(rest.trim(), path, line, line_n)?,
+                "visible" => config.visible = parse_value_boolean(rest.trim(), path, line, line_n)?,
+                _ => {
+                    return Err(ParseError::InvalidKey(parse_error_message(
+                        "unknown key",
+                        path,
+                        line,
+                        0,
+                        line.len()-1,
+                        line_n,
+                    )))
+                }
+            }
+        }else{
+            return Err(ParseError::InvalidConfig(parse_error_message("configuration needs to start with '---' for the first line", path, line, 0, line.len(), line_n)));
+        }
+        line_n += 1;
+    }
+    if config.is_valid() {
+        return Ok((config, body));
+    } else if line_n == 2 {
+        return Err(ParseError::InvalidConfig(
+            format!("empty config no key value pairs found in {}", "test.txt").into(),
+        ));
+    } else if !reached_end {
+        return Err(ParseError::InvalidConfig(
+            "no at '---' for the last line of the configuration".into(),
+        ));
+    } else if config.title.is_empty(){
+        return Err(ParseError::InvalidConfig(
+            "missing configuration 'title' field".into(),
+        ));
+    }else {
+        return Err(ParseError::InvalidConfig(
+            "missing configuration 'layout' field or 'base_layout' to be set to a custom value".into(),
+        ));
+    }
 }
 
-#[test]
-fn test_config_carrige_returns() {
-    assert_eq!(
-        Config {
-            layout: "page".to_string(),
-            base_layout: "default".to_string(),
-            title: "hello world".to_string(),
-            description: None,
-            permalink: "".to_string(),
-            categories: Vec::new(),
-            tags: Vec::new(),
-            visible: true
-        },
-        Config::parse("layout:page\r\ntitle:hello world").unwrap()
-    );
-}
 
 #[derive(Debug)]
 pub struct Article {
@@ -171,74 +316,39 @@ pub struct Article {
     pub config_liquid: liquid::Object,
 }
 
-fn to_string_vector(v: &Vec<&str>, start: usize) -> Option<String> {
-    if v.is_empty() {
-        return None;
-    }
-    let mut output = String::from("");
-    for e in start..v.len() {
-        if e != start {
-            let temp = "---".to_owned() + v.get(e).unwrap();
-            output += &temp;
-        } else {
-            output += v.get(e).unwrap();
-        }
-    }
-
-    return Some(output);
-}
-
 impl Article {
     /// header is in a --- --- block with new lines
     /// the rest of the doc is template in markdown
     pub fn parse(md: &str) -> Result<Article, ParseError> {
-        if md.is_empty() {
-            return Err(ParseError::Empty);
-        }
+        let (config, content) = parse(md)?;        
+        // markdown parsing NOTE: we are assuming that we are dealing with markdown hear!!!
+        let template = content.trim().to_string();
 
-        let lines: Vec<&str> = md.split("---").collect();
-        if let Some(config) = lines.get(1) {
-            if let Some(content) = to_string_vector(&lines, 2) {
-                if content.starts_with("-") {
-                    return Err(ParseError::InvalidHeader(
-                        "only 3 dashes allowed for config header".to_string(),
-                    ));
-                }
-                let config = Config::parse(config)?;
-
-                // markdown parsing NOTE: we are assuming that we are dealing with markdown hear!!!
-                let template = content.trim().to_string();
-
-                let url: String = if config.permalink.is_empty() {
-                    format!("{}.html", config.title)
-                } else {
-                    config.permalink.clone() // messy.... argh!!!
-                }.replace(" ", "%20");
-                let config_liquid = liquid::object!({
-                    "content": template,
-                    "config": liquid::object!({
-                        "title": config.title,
-                        "description": config.description,
-                        "tags": config.tags,
-                        "categories": config.categories,
-                        "visible": config.visible,
-                        "layout": config.layout,
-                    }),
-                    "url":url,
-                });
-                // if let Some(base_layout) =
-                return Ok(Article {
-                    template,
-                    config,
-                    url,
-                    config_liquid,
-                });
-            }
+        let url: String = if config.permalink.is_empty() {
+            format!("{}.html", config.title)
         } else {
-            return Err(ParseError::NoHeader);
+            config.permalink.clone() // messy.... argh!!!
         }
-
-        Err(ParseError::InvalidTemplate)
+        .replace(" ", "%20");
+        let config_liquid = liquid::object!({
+            "content": template,
+            "config": liquid::object!({
+                "title": config.title,
+                "description": config.description,
+                "tags": config.tags,
+                "categories": config.categories,
+                "visible": config.visible,
+                "layout": config.layout,
+            }),
+            "url":url,
+        });
+        // if let Some(base_layout) =
+        return Ok(Article {
+            template,
+            config,
+            url,
+            config_liquid,
+        });
     }
 
     pub fn pre_render(
@@ -307,24 +417,24 @@ impl Article {
 }
 
 #[cfg(test)]
-mod parse {
+mod parse_tests {
 
     use super::*;
 
     #[test]
     fn empty_content() {
-        assert_eq!(Some(ParseError::Empty), Article::parse("").err());
+        assert_eq!(Some(ParseError::InvalidConfig("no at '---' for the last line of the configuration".into())), Article::parse("").err());
     }
 
     #[test]
     fn test_empty_template() {
-        let a: Article = Article::parse("---\nlayout:page\ntitle:cats and dogs---\n").unwrap();
+        let a: Article = Article::parse("---\nlayout:page\ntitle:cats and dogs\n---\n").unwrap();
         assert_eq!("", a.template);
     }
 
     #[test]
     fn parse() {
-        let a: Article = Article::parse("---\nlayout:page\ntitle:cats and dogs---\ncat").unwrap();
+        let a: Article = Article::parse("---\nlayout:page\ntitle:cats and dogs\n---\ncat").unwrap();
         assert_eq!("cat", a.template);
         assert_eq!("page", a.config.layout);
     }
@@ -332,7 +442,7 @@ mod parse {
     #[test]
     fn parse_template_muli_line() {
         let a: Article =
-            Article::parse("---\nlayout:page\ntitle:cats and dogs---\ncat\ncat\ncat\ncat\ncat")
+            Article::parse("---\nlayout:page\ntitle:cats and dogs\n---\ncat\ncat\ncat\ncat\ncat")
                 .unwrap();
         assert_eq!("cat\ncat\ncat\ncat\ncat", a.template);
         assert_eq!("page", a.config.layout);
@@ -341,7 +451,7 @@ mod parse {
     #[test]
     fn template_md_line() {
         let a: Article =
-            Article::parse("---\nlayout:page\ntitle:cats and dogs---\ncat---dog").unwrap();
+            Article::parse("---\nlayout:page\ntitle:cats and dogs\n---\ncat---dog").unwrap();
         assert_eq!("cat---dog", a.template);
         assert_eq!("page", a.config.layout);
     }
@@ -349,7 +459,7 @@ mod parse {
     #[test]
     fn parse_with_real() {
         let a: Article =
-            Article::parse("---\r\nlayout: page\r\ntitle:cats and dogs---\r\ncat").unwrap();
+            Article::parse("---\nlayout: page\ntitle:cats and dogs\n---\ncat").unwrap();
         assert_eq!("cat", a.template);
         assert_eq!("page", a.config.layout);
     }
@@ -357,10 +467,10 @@ mod parse {
     #[test]
     fn more_than_three_dashes() {
         assert_eq!(
-            Some(ParseError::InvalidHeader(
-                "only 3 dashes allowed for config header".to_string()
+            Some(ParseError::InvalidConfig(
+                "only 3 dashes allowed for config header".into()
             )),
-            Article::parse("----\r\nlayout:page\r\ntitle:cats and dogs-------\r\ncat").err()
+            Article::parse("----\nlayout:page\ntitle:cats and dogs\n-------\ncat").err()
         );
     }
 }
@@ -396,7 +506,7 @@ mod pre_render {
         assert_eq!(
             "<h1>cats and dogs</h1>\n<p>cats</p>\n".to_string(),
             gen_render_mocks(
-                "---\r\nlayout: page\r\ntitle:cats and dogs---\r\n# {{page.config.title}}\ncats",
+                "---\r\nlayout: page\r\ntitle:cats and dogs\n---\r\n# {{page.config.title}}\ncats",
                 vec![("default".to_string(), "cats".to_string())]
             )
             .unwrap()
@@ -408,7 +518,7 @@ mod pre_render {
         assert_eq!(
             "<h1>cats and dogs</h1>\n<p>cats</p>\n".to_string(),
             gen_render_mocks(
-                "---\r\nlayout: page\r\ntitle:cats and dogs---\r\n# {{page.config.title}}\ncats",
+                "---\r\nlayout: page\r\ntitle:cats and dogs\n---\r\n# {{page.config.title}}\ncats",
                 vec![("default".to_string(), "cats".to_string())]
             )
             .unwrap()
@@ -422,7 +532,7 @@ mod pre_render {
         assert_eq!(
             Some(CustomError("".to_string())),
             gen_render_mocks(
-                "---\r\nlayout: page\r\ntitle:cats and dogs---\r\n# {{global.articles}}\ncat",
+                "---\r\nlayout: page\r\ntitle:cats and dogs\n---\r\n# {{global.articles}}\ncat",
                 vec![("default".to_string(), "cats".to_string())]
             )
             .err()
@@ -464,7 +574,7 @@ mod render {
         assert_eq!(
             "cats".to_string(),
             gen_render_mocks(
-                "---\r\nlayout: page\r\ntitle:cats and dogs---\r\ncat",
+                "---\r\nlayout: page\r\ntitle:cats and dogs\n---\r\ncat",
                 vec![("default".to_string(), "cats".to_string())],
                 &liquid::object!({})
             )
@@ -477,7 +587,7 @@ mod render {
         assert_eq!(
             "test1".to_string(),
             gen_render_mocks(
-                "---\r\nlayout: page\r\ntitle:cats and dogs---\r\ncat",
+                "---\r\nlayout: page\r\ntitle:cats and dogs\n---\r\ncat",
                 vec![("default".to_string(), "{{global}}".to_string())],
                 &liquid::object!({
                     "test": 1
@@ -507,7 +617,7 @@ mod render {
         assert_eq!(
             "<h1>cats and dogs</h1><p>cat</p>\n".to_string(),
             gen_render_mocks(
-                "---\r\nlayout: page\r\ntitle:cats and dogs---\r\ncat",
+                "---\r\nlayout: page\r\ntitle:cats and dogs\n---\r\ncat",
                 vec![(
                     "default".to_string(),
                     "<h1>{{page.config.title}}</h1>{{page.content}}".to_string()
@@ -525,7 +635,7 @@ mod render {
         assert_eq!(
             "<h1>cats and dogs</h1><p>cat<span>hello world</span></p>\n".to_string(),
             gen_render_mocks(
-                "---\r\nlayout: page\r\ntitle:cats and dogs---\r\ncat<span>hello world</span>",
+                "---\r\nlayout: page\r\ntitle:cats and dogs\n---\r\ncat<span>hello world</span>",
                 vec![(
                     "default".to_string(),
                     "<h1>{{page.config.title}}</h1>{{page.content}}".to_string()
@@ -543,7 +653,7 @@ mod render {
         assert_eq!(
             "I am a header<p>cat</p>\n".to_string(),
             gen_render_mocks(
-                "---\r\nlayout: page\r\ntitle:cats and dogs---\r\ncat",
+                "---\r\nlayout: page\r\ntitle:cats and dogs\n---\r\ncat",
                 vec![
                     (
                         "default".to_string(),
@@ -568,7 +678,7 @@ mod render {
         assert_eq!(
             "<h1>mole</h1><p>cat mole</p>\n".to_string(),
             gen_render_mocks(
-                "---\r\nlayout: page\r\ntitle:mole---\r\ncat {{page.config.title}}",
+                "---\r\nlayout: page\r\ntitle:mole\n---\r\ncat {{page.config.title}}",
                 vec![
                     (
                         "default".to_string(),
