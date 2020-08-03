@@ -1,9 +1,9 @@
-use crate::parse::{Config, ParseError, parse};
+use crate::parse::{parse, Config, ParseError};
 
+use crate::error::CustomError;
 use log::warn;
 use pulldown_cmark::{html, Options, Parser};
-use crate::error::CustomError;
-
+use std::{fs::File, io::BufReader};
 
 #[derive(Debug)]
 pub struct Article {
@@ -16,8 +16,8 @@ pub struct Article {
 impl Article {
     /// header is in a --- --- block with new lines
     /// the rest of the doc is template in markdown
-    pub fn parse(md: &str) -> Result<Article, ParseError> {
-        let (config, content) = parse(md)?;        
+    pub fn parse(md: BufReader<File>, path: &str) -> Result<Article, ParseError> {
+        let (config, content) = parse(md, path)?;
         // markdown parsing NOTE: we are assuming that we are dealing with markdown hear!!!
         let template = content.trim().to_string();
 
@@ -120,7 +120,12 @@ mod parse_tests {
 
     #[test]
     fn empty_content() {
-        assert_eq!(Some(ParseError::InvalidConfig("no at '---' for the last line of the configuration".into())), Article::parse("").err());
+        assert_eq!(
+            Some(ParseError::InvalidConfig(
+                "no at '---' for the last line of the configuration".into()
+            )),
+            Article::parse("").err()
+        );
     }
 
     #[test]

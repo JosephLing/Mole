@@ -176,6 +176,10 @@ pub struct BuildCommand {
     /// path from 'source' to articles folder
     scss: PathBuf,
 
+    #[argh(option, default = "PathBuf::from(\"_css/\")")]
+    /// path from 'source' to articles folder
+    scss_load_paths: PathBuf,
+
     #[argh(switch)]
     /// whether or not to check the project for changes and if changed rebuild
     watch: bool,
@@ -206,7 +210,7 @@ impl BuildCommand {
                 .includes(&self.include, false)
                 .includes(&self.layouts, true)
                 .articles(&vec![&self.articles, &PathBuf::from(current)])
-                .sass(&self.scss)
+                .sass(&self.scss, &vec![&self.scss_load_paths])
                 .run();
 
             if self.serve {
@@ -223,42 +227,42 @@ impl BuildCommand {
                         error!("{:?}", e);
                     }
                 }
-            }
 
-            if self.watch {
-                info!("watching for changes in {:?}", self.current);
-                // Create a channel to receive the events.
-                let (tx, rx) = channel();
+                if self.watch {
+                    info!("watching for changes in {:?}", self.current);
+                    // Create a channel to receive the events.
+                    let (tx, rx) = channel();
 
-                // Create a watcher object, delivering debounced events.
-                // The notification back-end is selected based on the platform.
-                let mut watcher = watcher(tx, Duration::from_secs(60)).unwrap();
+                    // Create a watcher object, delivering debounced events.
+                    // The notification back-end is selected based on the platform.
+                    let mut watcher = watcher(tx, Duration::from_secs(60)).unwrap();
 
-                // Add a path to be watched. All files and directories at that path and
-                // below will be monitored for changes.
-                watcher.watch(current, RecursiveMode::Recursive).unwrap();
+                    // Add a path to be watched. All files and directories at that path and
+                    // below will be monitored for changes.
+                    watcher.watch(current, RecursiveMode::Recursive).unwrap();
 
-                loop {
-                    match rx.recv() {
-                        Ok(event) => {
-                            info!("{:?}", event);
-                            info!("re-building");
-                            mole::Build::new(&self.dest)
-                                .includes(&self.include, false)
-                                .includes(&self.layouts, true)
-                                .articles(&vec![&self.articles, &PathBuf::from(current)])
-                                .sass(&self.scss)
-                                .run();
+                    loop {
+                        match rx.recv() {
+                            Ok(event) => {
+                                info!("{:?}", event);
+                                info!("re-building");
+                                mole::Build::new(&self.dest)
+                                    .includes(&self.include, false)
+                                    .includes(&self.layouts, true)
+                                    .articles(&vec![&self.articles, &PathBuf::from(current)])
+                                    .sass(&self.scss, &vec![&self.scss_load_paths])
+                                    .run();
+                            }
+                            Err(e) => error!("watch error: {:?}", e),
                         }
-                        Err(e) => error!("watch error: {:?}", e),
                     }
                 }
+            } else {
+                error!(
+                    "{:?} is not a directory so could not find any files to build from",
+                    current
+                );
             }
-        } else {
-            error!(
-                "{:?} is not a directory so could not find any files to build from",
-                current
-            );
         }
     }
 }

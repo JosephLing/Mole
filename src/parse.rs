@@ -1,3 +1,8 @@
+use std::{
+    fs::File,
+    io::{BufRead, BufReader},
+};
+
 type ErrorMessage = String;
 
 #[derive(PartialEq)]
@@ -117,7 +122,7 @@ fn parse_key<'a>(
         path,
         line,
         line.len(),
-        line.len()+1,
+        line.len() + 1,
         lineno,
     )))
 }
@@ -209,7 +214,7 @@ fn parse_value_list(
             path,
             line,
             line.len(),
-            line.len()+5,
+            line.len() + 5,
             lineno,
         )));
     }
@@ -221,24 +226,24 @@ fn parse_value_list(
 /// BufReader<R> can improve the speed of programs that make small and repeated read calls to the same file or network socket.
 /// It does not help when reading very large amounts at once, or reading just one or a few times.
 /// It also provides no advantage when reading from a source that is already in memory, like a Vec<u8>.
-pub fn parse(data: &str) -> Result<(Config, String), ParseError> {
+pub fn parse(data: BufReader<File>, path: &str) -> Result<(Config, String), ParseError> {
     let mut found_config = false;
     let mut line_n = 1;
     let mut config = Config::default();
     let lines = data.lines();
     let mut body = "".to_string();
-    let path = "test.txt";
     let mut reached_end = false;
     for line in lines {
+        let line = &line.unwrap();
         if !found_config && line == "---" {
             found_config = true;
-        } else if found_config  && line == "---" {
+        } else if found_config && line == "---" {
             reached_end = true;
             found_config = false;
-        }else if reached_end{
-            body += line;
+        } else if reached_end {
+            body += &line;
             body += "\n";
-        } else if found_config{
+        } else if found_config {
             let (key, rest) = parse_key(&line, path, line, line_n)?;
             match key {
                 // match each thing but then need to work out how to map it....
@@ -254,7 +259,8 @@ pub fn parse(data: &str) -> Result<(Config, String), ParseError> {
                     config.title = parse_value_string(rest.trim(), path, line, line_n)?.to_string()
                 }
                 "description" => {
-                    config.description = parse_value_string(rest.trim(), path, line, line_n)?.to_string()
+                    config.description =
+                        parse_value_string(rest.trim(), path, line, line_n)?.to_string()
                 }
                 "permalink" => {
                     config.permalink =
@@ -271,13 +277,20 @@ pub fn parse(data: &str) -> Result<(Config, String), ParseError> {
                         path,
                         line,
                         0,
-                        line.len()-1,
+                        line.len() - 1,
                         line_n,
                     )))
                 }
             }
-        }else{
-            return Err(ParseError::InvalidConfig(parse_error_message("configuration needs to start with '---' for the first line", path, line, 0, line.len(), line_n)));
+        } else {
+            return Err(ParseError::InvalidConfig(parse_error_message(
+                "configuration needs to start with '---' for the first line",
+                path,
+                line,
+                0,
+                line.len(),
+                line_n,
+            )));
         }
         line_n += 1;
     }
@@ -291,13 +304,14 @@ pub fn parse(data: &str) -> Result<(Config, String), ParseError> {
         return Err(ParseError::InvalidConfig(
             "no at '---' for the last line of the configuration".into(),
         ));
-    } else if config.title.is_empty(){
+    } else if config.title.is_empty() {
         return Err(ParseError::InvalidConfig(
             "missing configuration 'title' field".into(),
         ));
-    }else {
+    } else {
         return Err(ParseError::InvalidConfig(
-            "missing configuration 'layout' field or 'base_layout' to be set to a custom value".into(),
+            "missing configuration 'layout' field or 'base_layout' to be set to a custom value"
+                .into(),
         ));
     }
 }

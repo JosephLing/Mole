@@ -1,13 +1,13 @@
 pub mod article;
-use std::collections::HashMap;
 use log::{error, info, warn};
+use std::collections::HashMap;
 use std::fs::read_to_string;
 use std::fs::File;
-use std::io::prelude::*;
+use std::io::{prelude::*, BufReader};
 use std::path::{Path, PathBuf};
 pub mod error;
-mod util;
 mod parse;
+mod util;
 
 pub type Partials = liquid::partials::EagerCompiler<liquid::partials::InMemorySource>;
 
@@ -64,14 +64,18 @@ impl<'a> Build<'a> {
             );
                 } else {
                     for f in util::search_dir(&dir, "md") {
-                        if let Ok(data) = util::read_file(&f) {
-                            match article::Article::parse(&data)  {
+                        if let Ok(cat) = File::open(&f) {
+                            let buffered = BufReader::new(cat);
+                            // &std::io::BufReader<std::path::PathBuf>
+                            match article::Article::parse(
+                                buffered,
+                                &util::path_file_name_to_string(&f).unwrap(),
+                            ) {
                                 Ok(art) => self.articles.push(art),
-                                Err(e) => error!("{:?}", e)
+                                Err(e) => error!("{:?}", e),
                             }
                         } else {
-                            // invalid format in the file
-                            warn!("invalid file format for {:?}", dir);
+                            error!("could not read {:?}", &f);
                         }
                     }
                 }
@@ -84,12 +88,15 @@ impl<'a> Build<'a> {
     }
 
     /// TODO: ignore _files
-    pub fn sass(self, dir: &'a PathBuf) -> Self {
+    pub fn sass(self, dir: &'a PathBuf, load_paths: &Vec<&Path>) -> Self {
         if dir.exists() && dir.is_dir() {
             for f in util::search_dir(dir, "scss") {
                 info!("{:?}", f);
                 if let Ok(data) = read_to_string(&f) {
-                    match grass::from_string(data) {
+                    match grass::from_string(
+                        data,
+                        &grass::Options::default().load_paths(load_paths),
+                    ) {
                         Ok(css) => {
                             let mut output_path = self.output.clone();
                             output_path
@@ -100,7 +107,7 @@ impl<'a> Build<'a> {
                             file.write_all(css.as_bytes()).unwrap();
                             //TODO: write to disk
                         }
-                        Err(e) => warn!("parsing sccs {:?} caused {:?}", f, e),
+                        Err(e) => warn!("parsing sccs {:?} caused {:?}", &f, e),
                     }
                 } else {
                     warn!("soemthing went wrong");
@@ -125,11 +132,11 @@ impl<'a> Build<'a> {
             // global_tags.push(&obj.config_liquid.tags);
             // global_cats.push(&obj.config_liquid.cats);
             global_articles.push(&obj.config_liquid);
-            for tag in &obj.config.tags{
+            for tag in &obj.config.tags {
                 global_tags.entry(tag).or_insert(Vec::new()).push(&obj.url);
             }
 
-            for cat in &obj.config.categories{
+            for cat in &obj.config.categories {
                 global_cats.entry(cat).or_insert(Vec::new()).push(&obj.url);
             }
         }

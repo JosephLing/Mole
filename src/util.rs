@@ -1,5 +1,5 @@
 use std::fs::read_to_string;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::error::CustomError;
 
@@ -19,7 +19,7 @@ pub fn search_dir(path: &PathBuf, file_type: &str) -> Vec<PathBuf> {
     f
 }
 
-pub fn read_file(path: &PathBuf) -> Result<String, CustomError> {
+pub fn read_file(path: &Path) -> Result<String, CustomError> {
     match read_to_string(path)?.parse::<String>() {
         Ok(c) => Ok(c),
         Err(e) => Err(CustomError(e.to_string())),
@@ -27,7 +27,7 @@ pub fn read_file(path: &PathBuf) -> Result<String, CustomError> {
 }
 
 /// note: should only be used for .html files
-pub fn path_file_name_to_string(file_path: &PathBuf) -> Option<String> {
+pub fn path_file_name_to_string(file_path: &Path) -> Option<String> {
     Some(
         file_path
             .file_name()?

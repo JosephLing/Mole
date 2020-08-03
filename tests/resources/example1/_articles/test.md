@@ -2,7 +2,7 @@
 layout:page
 title: content & foo
 description: hello world
-tags: foo,asdf,asdf,asdf
+tags:foo,asdf
 ---
 
 List

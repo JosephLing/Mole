@@ -12,7 +12,7 @@ pulldown-cmark = {version =  "0.7.2", default-features = false}
 argh = "0.1.3"
 log = "0.4"
 simple_logger = "*"
-grass = "0.9.5"
+grass = "0.10.0"
 notify = "4.0.12"
 tiny_http = "0.7"
 mime_guess = "2"
