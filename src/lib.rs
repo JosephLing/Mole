@@ -1,4 +1,4 @@
-pub mod parse;
+pub mod article;
 use std::collections::HashMap;
 use log::{error, info, warn};
 use std::fs::read_to_string;
@@ -7,12 +7,13 @@ use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 pub mod error;
 mod util;
+mod parse;
 
 pub type Partials = liquid::partials::EagerCompiler<liquid::partials::InMemorySource>;
 
 pub struct Build<'a> {
     includes: Partials,
-    articles: Vec<parse::Article>,
+    articles: Vec<article::Article>,
     layouts: Vec<String>,
     output: &'a PathBuf,
 }
@@ -64,7 +65,10 @@ impl<'a> Build<'a> {
                 } else {
                     for f in util::search_dir(&dir, "md") {
                         if let Ok(data) = util::read_file(&f) {
-                            self.articles.push(parse::Article::parse(&data).unwrap());
+                            match article::Article::parse(&data)  {
+                                Ok(art) => self.articles.push(art),
+                                Err(e) => error!("{:?}", e)
+                            }
                         } else {
                             // invalid format in the file
                             warn!("invalid file format for {:?}", dir);
