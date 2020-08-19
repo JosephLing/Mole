@@ -40,7 +40,7 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             layout: String::from(""),
-            base_layout: String::from(""),
+            base_layout: String::from("default"),
             title: String::from(""),
             description: String::from(""),
             permalink: String::from(""),
@@ -63,11 +63,11 @@ fn parse_error_message(
     line: &str,
     start: usize,
     end: usize,
-    lineno: usize,
+    lineno: i8,
 ) -> ErrorMessage {
     let spacing = if lineno < 99 {
         "  "
-    } else if lineno < 999 {
+    } else if lineno < 127 {
         "   "
     } else {
         "    "
@@ -102,7 +102,7 @@ fn parse_key<'a>(
     rest: &'a str,
     path: &str,
     line: &str,
-    lineno: usize,
+    lineno: i8,
 ) -> Result<(&'a str, &'a str), ParseError> {
     if rest.is_empty() {
         return Err(ParseError::EmptyValue(parse_error_message(
@@ -131,7 +131,7 @@ fn parse_value_string<'a>(
     rest: &'a str,
     path: &str,
     line: &str,
-    lineno: usize,
+    lineno: i8,
 ) -> Result<&'a str, ParseError> {
     let rest = rest.trim();
     if rest.is_empty() {
@@ -157,12 +157,7 @@ fn parse_value_string<'a>(
     Ok(rest)
 }
 
-fn parse_value_boolean(
-    rest: &str,
-    path: &str,
-    line: &str,
-    lineno: usize,
-) -> Result<bool, ParseError> {
+fn parse_value_boolean(rest: &str, path: &str, line: &str, lineno: i8) -> Result<bool, ParseError> {
     match rest.parse::<bool>() {
         Ok(b) => Ok(b),
         Err(_) => Err(ParseError::InvalidValue(parse_error_message(
@@ -180,7 +175,7 @@ fn parse_value_list(
     rest: &str,
     path: &str,
     line: &str,
-    lineno: usize,
+    lineno: i8,
 ) -> Result<Vec<String>, ParseError> {
     if rest.is_empty() {
         return Err(ParseError::EmptyValue(parse_error_message(
@@ -230,6 +225,8 @@ pub fn parse(data: BufReader<File>, path: &str) -> Result<(Config, String), Pars
     let mut found_config = false;
     let mut line_n = 1;
     let mut config = Config::default();
+    // we set the defaults here e.g. default_layout: "default"
+    // therefore when we get default_layout: "" then it overwrites the default
     let lines = data.lines();
     let mut body = "".to_string();
     let mut reached_end = false;
@@ -237,9 +234,11 @@ pub fn parse(data: BufReader<File>, path: &str) -> Result<(Config, String), Pars
         let line = &line.unwrap();
         if !found_config && line == "---" {
             found_config = true;
+            line_n += 1;
         } else if found_config && line == "---" {
             reached_end = true;
             found_config = false;
+            line_n += 1;
         } else if reached_end {
             body += &line;
             body += "\n";
@@ -282,6 +281,7 @@ pub fn parse(data: BufReader<File>, path: &str) -> Result<(Config, String), Pars
                     )))
                 }
             }
+            line_n += 1;
         } else {
             return Err(ParseError::InvalidConfig(parse_error_message(
                 "configuration needs to start with '---' for the first line",
@@ -292,7 +292,6 @@ pub fn parse(data: BufReader<File>, path: &str) -> Result<(Config, String), Pars
                 line_n,
             )));
         }
-        line_n += 1;
     }
     if config.is_valid() {
         return Ok((config, body));

@@ -6,7 +6,7 @@ use std::fs::File;
 use std::io::{prelude::*, BufReader};
 use std::path::{Path, PathBuf};
 pub mod error;
-mod parse;
+pub mod parse;
 mod util;
 
 pub type Partials = liquid::partials::EagerCompiler<liquid::partials::InMemorySource>;

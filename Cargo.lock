@@ -716,6 +716,7 @@ dependencies = [
  "predicates",
  "pulldown-cmark",
  "simple_logger",
+ "tempfile",
  "tiny_http",
 ]
 

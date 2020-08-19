@@ -17,8 +17,9 @@ impl Article {
     /// header is in a --- --- block with new lines
     /// the rest of the doc is template in markdown
     pub fn parse(md: BufReader<File>, path: &str) -> Result<Article, ParseError> {
-        let (config, content) = parse(md, path)?;
         // markdown parsing NOTE: we are assuming that we are dealing with markdown hear!!!
+        let (config, content) = parse(md, path)?;
+
         let template = content.trim().to_string();
 
         let url: String = if config.permalink.is_empty() {
@@ -27,6 +28,7 @@ impl Article {
             config.permalink.clone() // messy.... argh!!!
         }
         .replace(" ", "%20");
+
         let config_liquid = liquid::object!({
             "content": template,
             "config": liquid::object!({
@@ -39,7 +41,7 @@ impl Article {
             }),
             "url":url,
         });
-        // if let Some(base_layout) =
+
         return Ok(Article {
             template,
             config,
@@ -98,8 +100,13 @@ impl Article {
         parser: &liquid::Parser,
     ) -> Result<String, CustomError> {
         let template = if self.config.base_layout.is_empty() {
-            warn!("no base layout found");
-            parser.parse(&self.template)?
+            if self.config.layout.is_empty() {
+                warn!("no base layout found");
+                parser.parse(&format!("{{%- include '{0}' -%}}", self.config.layout))?
+            } else {
+                warn!("no base layout found and no layout found");
+                parser.parse(&self.template)?
+            }
         } else {
             warn!("using baselayout: {:?}", self.config.base_layout);
             parser.parse(&format!("{{%- include '{0}' -%}}", self.config.base_layout))?
@@ -114,151 +121,40 @@ impl Article {
 }
 
 #[cfg(test)]
-mod parse_tests {
-
-    use super::*;
-
-    #[test]
-    fn empty_content() {
-        assert_eq!(
-            Some(ParseError::InvalidConfig(
-                "no at '---' for the last line of the configuration".into()
-            )),
-            Article::parse("").err()
-        );
-    }
-
-    #[test]
-    fn test_empty_template() {
-        let a: Article = Article::parse("---\nlayout:page\ntitle:cats and dogs\n---\n").unwrap();
-        assert_eq!("", a.template);
-    }
-
-    #[test]
-    fn parse() {
-        let a: Article = Article::parse("---\nlayout:page\ntitle:cats and dogs\n---\ncat").unwrap();
-        assert_eq!("cat", a.template);
-        assert_eq!("page", a.config.layout);
-    }
-
-    #[test]
-    fn parse_template_muli_line() {
-        let a: Article =
-            Article::parse("---\nlayout:page\ntitle:cats and dogs\n---\ncat\ncat\ncat\ncat\ncat")
-                .unwrap();
-        assert_eq!("cat\ncat\ncat\ncat\ncat", a.template);
-        assert_eq!("page", a.config.layout);
-    }
-
-    #[test]
-    fn template_md_line() {
-        let a: Article =
-            Article::parse("---\nlayout:page\ntitle:cats and dogs\n---\ncat---dog").unwrap();
-        assert_eq!("cat---dog", a.template);
-        assert_eq!("page", a.config.layout);
-    }
-
-    #[test]
-    fn parse_with_real() {
-        let a: Article =
-            Article::parse("---\nlayout: page\ntitle:cats and dogs\n---\ncat").unwrap();
-        assert_eq!("cat", a.template);
-        assert_eq!("page", a.config.layout);
-    }
-
-    #[test]
-    fn more_than_three_dashes() {
-        assert_eq!(
-            Some(ParseError::InvalidConfig(
-                "only 3 dashes allowed for config header".into()
-            )),
-            Article::parse("----\nlayout:page\ntitle:cats and dogs\n-------\ncat").err()
-        );
-    }
-}
-
-#[cfg(test)]
-mod pre_render {
-
-    use super::*;
-
-    // lazy didn't know how best to grab the type
-    type Partials = liquid::partials::EagerCompiler<liquid::partials::InMemorySource>;
-
-    fn gen_render_mocks(md: &str, mocks: Vec<(String, String)>) -> Result<String, CustomError> {
-        let a: Article = Article::parse(md).unwrap();
-        let mut source = Partials::empty();
-
-        for (k, v) in mocks {
-            source.add(k, v);
-        }
-        let parser = liquid::ParserBuilder::with_stdlib()
-            .partials(source)
-            .build()?;
-
-        Ok(
-            a.pre_render(&liquid::object!({ "articles": vec![md] }), &parser, false)
-                .pre_render(&liquid::object!({ "articles": vec![md] }), &parser, true)
-                .template,
-        )
-    }
-
-    #[test]
-    fn markdown_and_page_varaibles() {
-        assert_eq!(
-            "<h1>cats and dogs</h1>\n<p>cats</p>\n".to_string(),
-            gen_render_mocks(
-                "---\r\nlayout: page\r\ntitle:cats and dogs\n---\r\n# {{page.config.title}}\ncats",
-                vec![("default".to_string(), "cats".to_string())]
-            )
-            .unwrap()
-        );
-    }
-
-    #[test]
-    fn accessing_global_varaible() {
-        assert_eq!(
-            "<h1>cats and dogs</h1>\n<p>cats</p>\n".to_string(),
-            gen_render_mocks(
-                "---\r\nlayout: page\r\ntitle:cats and dogs\n---\r\n# {{page.config.title}}\ncats",
-                vec![("default".to_string(), "cats".to_string())]
-            )
-            .unwrap()
-        );
-    }
-
-    // we want some way of stopping an article iterating over all the articles or at least itself
-    #[ignore = "awaiting error reporting"]
-    #[test]
-    fn error_when_article_accesses_itself() {
-        assert_eq!(
-            Some(CustomError("".to_string())),
-            gen_render_mocks(
-                "---\r\nlayout: page\r\ntitle:cats and dogs\n---\r\n# {{global.articles}}\ncat",
-                vec![("default".to_string(), "cats".to_string())]
-            )
-            .err()
-        );
-    }
-}
-
-// read_to_string
-// use std::fs::read_to_string;
-#[cfg(test)]
 mod render {
+
     use super::*;
+    use std::io::Write;
+    use tempfile;
 
     // lazy didn't know how best to grab the type
     type Partials = liquid::partials::EagerCompiler<liquid::partials::InMemorySource>;
+
+    fn create_article(md: &str, path: &str) -> Result<Article, ParseError> {
+        // create a temp file
+        let mut f = tempfile::Builder::new()
+            .rand_bytes(0)
+            .prefix("")
+            .suffix(path)
+            .tempfile_in("")
+            .unwrap();
+        write!(f, "{}", md).unwrap();
+
+        Ok(Article::parse(
+            BufReader::new(File::open(path).unwrap()),
+            path,
+        )?)
+    }
 
     fn gen_render_mocks(
         md: &str,
+        path: &str,
         mocks: Vec<(String, String)>,
         global: &liquid::Object,
     ) -> Result<String, CustomError> {
-        let a: Article = Article::parse(md).unwrap();
+        let a = create_article(md, path).unwrap();
+        // create partials
         let mut source = Partials::empty();
-
         for (k, v) in mocks {
             source.add(k, v);
         }
@@ -267,132 +163,208 @@ mod render {
             .build()
             .unwrap();
 
-        a.pre_render(&liquid::object!({}), &parser, true)
-            .render(global, &parser)
+        a.pre_render(global, &parser, true).render(global, &parser)
     }
 
-    #[test]
-    fn render_default_layout() {
-        assert_eq!(
-            "cats".to_string(),
-            gen_render_mocks(
-                "---\r\nlayout: page\r\ntitle:cats and dogs\n---\r\ncat",
-                vec![("default".to_string(), "cats".to_string())],
-                &liquid::object!({})
+    mod parse_tests {
+
+        use super::*;
+
+        #[test]
+        fn empty_content() {
+            assert_eq!(
+                Some(ParseError::InvalidConfig(
+                    "no at '---' for the last line of the configuration".into()
+                )),
+                create_article("", "empty_content").err()
+            );
+        }
+
+        #[test]
+        fn test_empty_template() {
+            let a: Article =
+                create_article("---\nlayout:page\ntitle:cats and dogs\n---\n", "test_empty_template").unwrap();
+            assert_eq!("", a.template);
+        }
+
+        #[test]
+        fn parse() {
+            let a: Article =
+            create_article("---\nlayout:page\ntitle:cats and dogs\n---\ncat", "parse").unwrap();
+            assert_eq!("cat", a.template);
+            assert_eq!("page", a.config.layout);
+        }
+
+        #[test]
+        fn parse_template_muli_line() {
+            let a: Article = create_article(
+                "---\nlayout:page\ntitle:cats and dogs\n---\ncat\ncat\ncat\ncat\ncat", "parse_template_multi_line"
             )
-            .unwrap()
-        );
+            .unwrap();
+            assert_eq!("cat\ncat\ncat\ncat\ncat", a.template);
+            assert_eq!("page", a.config.layout);
+        }
+
+        #[test]
+        fn template_md_line() {
+            let a: Article =
+            create_article("---\nlayout:page\ntitle:cats and dogs\n---\ncat---dog", "template_md_line").unwrap();
+            assert_eq!("cat---dog", a.template);
+            assert_eq!("page", a.config.layout);
+        }
+
+        #[test]
+        fn parse_with_real() {
+            let a: Article =
+            create_article("---\nlayout: page\ntitle:cats and dogs\n---\ncat", "parse_with_real").unwrap();
+            assert_eq!("cat", a.template);
+            assert_eq!("page", a.config.layout);
+        }
+
+        #[test]
+        fn more_than_three_dashes() {
+            assert_eq!(
+                Some(ParseError::InvalidConfig(
+                    "only 3 dashes allowed for config header".into()
+                )),
+                create_article("----\nlayout:page\ntitle:cats and dogs\n-------\ncat", "more_than_three_seconds").err()
+            );
+        }
     }
 
-    #[test]
-    fn render_globals() {
-        assert_eq!(
-            "test1".to_string(),
-            gen_render_mocks(
-                "---\r\nlayout: page\r\ntitle:cats and dogs\n---\r\ncat",
-                vec![("default".to_string(), "{{global}}".to_string())],
-                &liquid::object!({
-                    "test": 1
-                })
-            )
-            .unwrap()
-        );
-    }
+    mod layouts {
+        use super::*;
 
-    #[test]
-    fn render_globals_scope() {
-        assert_eq!(
-            "1".to_string(),
-            gen_render_mocks(
-                "---\r\nlayout: page\r\ntitle:cats and dogs---\r\ncat",
-                vec![("default".to_string(), "{{global.test}}".to_string())],
-                &liquid::object!({
-                    "test": 1
-                })
-            )
-            .unwrap()
-        );
-    }
+        #[test]
+        fn render_default_layout() {
+            assert_eq!(
+                "<p>catscat</p>\n",
+                gen_render_mocks(
+                    "---\r\nlayout: page\r\ntitle:cats and dogs\n---\r\ncat",
+                    "render_default_layout",
+                    vec![("default".to_string(), "cats".to_string())],
+                    &liquid::object!({})
+                )
+                .unwrap()
+            );
+        }
 
-    #[test]
-    fn render_content() {
-        assert_eq!(
-            "<h1>cats and dogs</h1><p>cat</p>\n".to_string(),
-            gen_render_mocks(
-                "---\r\nlayout: page\r\ntitle:cats and dogs\n---\r\ncat",
-                vec![(
-                    "default".to_string(),
-                    "<h1>{{page.config.title}}</h1>{{page.content}}".to_string()
-                )],
-                &liquid::object!({
-                    "test": 1
-                })
-            )
-            .unwrap()
-        );
-    }
+        #[test]
+        fn render_globals() {
+            assert_eq!(
+                "test1cat",
+                gen_render_mocks(
+                    "---\r\nlayout: page\r\ntitle:cats and dogs\n---\r\ncat",
+                    "render_globals",
+                    vec![("default".to_string(), "{{global}}".to_string())],
+                    &liquid::object!({
+                        "test": 1
+                    })
+                )
+                .unwrap()
+            );
+        }
 
-    #[test]
-    fn render_content_with_html_in_md() {
-        assert_eq!(
-            "<h1>cats and dogs</h1><p>cat<span>hello world</span></p>\n".to_string(),
-            gen_render_mocks(
-                "---\r\nlayout: page\r\ntitle:cats and dogs\n---\r\ncat<span>hello world</span>",
-                vec![(
-                    "default".to_string(),
-                    "<h1>{{page.config.title}}</h1>{{page.content}}".to_string()
-                )],
-                &liquid::object!({
-                    "test": 1
-                })
-            )
-            .unwrap()
-        );
-    }
+        #[test]
+        fn render_globals_scope() {
+            assert_eq!(
+                "1".to_string(),
+                gen_render_mocks(
+                    "---\r\nlayout: page\r\ntitle:cats and dogs---\r\ncat",
+                    "render_globals_scope",
+                    vec![("default".to_string(), "{{global.test}}".to_string())],
+                    &liquid::object!({
+                        "test": 1
+                    })
+                )
+                .unwrap()
+            );
+        }
 
-    #[test]
-    fn render_chained_includes() {
-        assert_eq!(
-            "I am a header<p>cat</p>\n".to_string(),
-            gen_render_mocks(
-                "---\r\nlayout: page\r\ntitle:cats and dogs\n---\r\ncat",
-                vec![
-                    (
+        #[test]
+        fn render_content() {
+            assert_eq!(
+                "<h1>cats and dogs</h1><p>cat</p>\n".to_string(),
+                gen_render_mocks(
+                    "---\r\nlayout: page\r\ntitle:cats and dogs\n---\r\ncat",
+                    "render_content",
+                    vec![(
                         "default".to_string(),
-                        "{% include 'header' %}{% include layout %}".to_string()
-                    ),
-                    ("header".to_string(), "I am a header".to_string()),
-                    ("page2".to_string(), "1".to_string()),
-                    ("page3".to_string(), "2".to_string()),
-                    ("page".to_string(), "{{page.content}}".to_string()),
-                    ("page4".to_string(), "3".to_string())
-                ],
-                &liquid::object!({
-                    "test": 1
-                })
-            )
-            .unwrap()
-        );
-    }
+                        "<h1>{{page.config.title}}</h1>{{page.content}}".to_string()
+                    )],
+                    &liquid::object!({
+                        "test": 1
+                    })
+                )
+                .unwrap()
+            );
+        }
 
-    #[test]
-    fn render_template_jekyll() {
-        assert_eq!(
-            "<h1>mole</h1><p>cat mole</p>\n".to_string(),
-            gen_render_mocks(
-                "---\r\nlayout: page\r\ntitle:mole\n---\r\ncat {{page.config.title}}",
-                vec![
-                    (
+        #[test]
+        fn render_content_with_html_in_md() {
+            assert_eq!(
+                "<h1>cats and dogs</h1><p>cat<span>hello world</span></p>\n".to_string(),
+                gen_render_mocks(
+                    "---\r\nlayout: page\r\ntitle:cats and dogs\n---\r\ncat<span>hello world</span>",
+                    "render_content_with_html_in_md",
+                    vec![(
                         "default".to_string(),
-                        "<h1>{{page.config.title}}</h1>{% include layout %}".to_string()
-                    ),
-                    ("page".to_string(), "{{page.content}}".to_string())
-                ],
-                &liquid::object!({
-                    "test": 1
-                })
-            )
-            .unwrap()
-        );
+                        "<h1>{{page.config.title}}</h1>{{page.content}}".to_string()
+                    )],
+                    &liquid::object!({
+                        "test": 1
+                    })
+                )
+                .unwrap()
+            );
+        }
+
+        #[test]
+        fn render_chained_includes() {
+            assert_eq!(
+                "I am a header<p>cat</p>\n".to_string(),
+                gen_render_mocks(
+                    "---\r\nlayout: page\r\ntitle:cats and dogs\n---\r\ncat",
+                    "render_chained_includes",
+                    vec![
+                        (
+                            "default".to_string(),
+                            "{% include 'header' %}{% include layout %}".to_string()
+                        ),
+                        ("header".to_string(), "I am a header".to_string()),
+                        ("page2".to_string(), "1".to_string()),
+                        ("page3".to_string(), "2".to_string()),
+                        ("page".to_string(), "{{page.content}}".to_string()),
+                        ("page4".to_string(), "3".to_string())
+                    ],
+                    &liquid::object!({
+                        "test": 1
+                    })
+                )
+                .unwrap()
+            );
+        }
+
+        #[test]
+        fn render_template_jekyll() {
+            assert_eq!(
+                "<h1>mole</h1><p>cat mole</p>\n".to_string(),
+                gen_render_mocks(
+                    "---\r\nlayout: page\r\ntitle:mole\n---\r\ncat {{page.config.title}}",
+                    "render_template_jekyll",
+                    vec![
+                        (
+                            "default".to_string(),
+                            "<h1>{{page.config.title}}</h1>{% include layout %}".to_string()
+                        ),
+                        ("page".to_string(), "{{page.content}}".to_string())
+                    ],
+                    &liquid::object!({
+                        "test": 1
+                    })
+                )
+                .unwrap()
+            );
+        }
     }
 }
