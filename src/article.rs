@@ -120,10 +120,11 @@ impl Article {
     }
 }
 
+
 #[cfg(test)]
 mod render {
 
-    use super::*;
+    use super::{Article, ParseError, BufReader, File, CustomError};
     use std::io::Write;
     use tempfile;
 
@@ -167,6 +168,7 @@ mod render {
     }
 
     mod parse_tests {
+        use pretty_assertions::{assert_eq};
 
         use super::*;
 
@@ -233,6 +235,7 @@ mod render {
     }
 
     mod layouts {
+        use pretty_assertions::{assert_eq};
         use super::*;
 
         #[test]
