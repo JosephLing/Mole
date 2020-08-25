@@ -2,10 +2,10 @@ use crate::parse::{parse, Config, ParseError};
 
 use crate::error::CustomError;
 #[cfg(not(test))]
-use log::{info, warn};
+use log::{warn};
 
 #[cfg(test)]
-use std::{println as warn, println as info};
+use std::{println as warn};
 
 use pulldown_cmark::{html, Options, Parser};
 use std::{fs::File, io::BufReader};
@@ -58,12 +58,12 @@ impl Article {
     pub fn pre_render(
         mut self,
         globals: &liquid::Object,
-        liquidParser: &liquid::Parser,
+        liquid_parser: &liquid::Parser,
         md: bool,
     ) -> Self {
         // hack do proper error handling!!!
 
-        let template = liquidParser
+        let template = liquid_parser
             .parse(&self.template)
             .unwrap()
             .render(&liquid::object!({
@@ -107,7 +107,9 @@ impl Article {
         let template = if self.config.base_layout.is_empty() {
             if self.config.layout.is_empty() {
                 warn!("no base layout found");
-                if !self.template.contains("{{page.content}}") || !self.template.contains("{{ page.content }}"){
+                if !self.template.contains("{{page.content}}")
+                    || !self.template.contains("{{ page.content }}")
+                {
                     warn!("potentailly missing out {{{{page.content}}}} in layout so none of the articles text will be displayed");
                 }
                 parser.parse(&format!("{{%- include '{0}' -%}}", self.config.layout))?
@@ -117,7 +119,9 @@ impl Article {
             }
         } else {
             warn!("using baselayout: {:?}", self.config.base_layout);
-            if !self.template.contains("{{page.content}}") || !self.template.contains("{{ page.content }}"){
+            if !self.template.contains("{{page.content}}")
+                || !self.template.contains("{{ page.content }}")
+            {
                 warn!("potentailly missing out {{{{page.content}}}} in layout so none of the articles text will be displayed");
             }
             parser.parse(&format!("{{%- include '{0}' -%}}", self.config.base_layout))?
@@ -131,11 +135,10 @@ impl Article {
     }
 }
 
-
 #[cfg(test)]
 mod render {
 
-    use super::{Article, ParseError, BufReader, File, CustomError};
+    use super::{Article, BufReader, CustomError, File, ParseError};
     use std::io::Write;
     use tempfile;
 
@@ -143,7 +146,6 @@ mod render {
     type Partials = liquid::partials::EagerCompiler<liquid::partials::InMemorySource>;
 
     fn create_article(md: &str, path: &str) -> Result<Article, ParseError> {
-        
         // create a temp file
         let mut f = tempfile::Builder::new()
             .rand_bytes(0)
@@ -181,7 +183,7 @@ mod render {
     }
 
     mod parse_tests {
-        use pretty_assertions::{assert_eq};
+        use pretty_assertions::assert_eq;
 
         use super::*;
 
@@ -197,15 +199,18 @@ mod render {
 
         #[test]
         fn test_empty_template() {
-            let a: Article =
-                create_article("---\nlayout:page\ntitle:cats and dogs\n---\n", "test_empty_template").unwrap();
+            let a: Article = create_article(
+                "---\nlayout:page\ntitle:cats and dogs\n---\n",
+                "test_empty_template",
+            )
+            .unwrap();
             assert_eq!("", a.template);
         }
 
         #[test]
         fn parse() {
             let a: Article =
-            create_article("---\nlayout:page\ntitle:cats and dogs\n---\ncat", "parse").unwrap();
+                create_article("---\nlayout:page\ntitle:cats and dogs\n---\ncat", "parse").unwrap();
             assert_eq!("cat", a.template);
             assert_eq!("page", a.config.layout);
         }
@@ -213,7 +218,8 @@ mod render {
         #[test]
         fn parse_template_muli_line() {
             let a: Article = create_article(
-                "---\nlayout:page\ntitle:cats and dogs\n---\ncat\ncat\ncat\ncat\ncat", "parse_template_multi_line"
+                "---\nlayout:page\ntitle:cats and dogs\n---\ncat\ncat\ncat\ncat\ncat",
+                "parse_template_multi_line",
             )
             .unwrap();
             assert_eq!("cat\ncat\ncat\ncat\ncat", a.template);
@@ -222,23 +228,33 @@ mod render {
 
         #[test]
         fn template_md_line() {
-            let a: Article =
-            create_article("---\nlayout:page\ntitle:cats and dogs\n---\ncat---dog", "template_md_line").unwrap();
+            let a: Article = create_article(
+                "---\nlayout:page\ntitle:cats and dogs\n---\ncat---dog",
+                "template_md_line",
+            )
+            .unwrap();
             assert_eq!("cat---dog", a.template);
             assert_eq!("page", a.config.layout);
         }
 
         #[test]
         fn parse_with_real() {
-            let a: Article =
-            create_article("---\nlayout: page\ntitle:cats and dogs\n---\ncat", "parse_with_real").unwrap();
+            let a: Article = create_article(
+                "---\nlayout: page\ntitle:cats and dogs\n---\ncat",
+                "parse_with_real",
+            )
+            .unwrap();
             assert_eq!("cat", a.template);
             assert_eq!("page", a.config.layout);
         }
 
         #[test]
         fn more_than_three_dashes() {
-            let e = create_article("----\nlayout:page\ntitle:cats and dogs\n-------\ncat", "more_than_three_seconds").err();
+            let e = create_article(
+                "----\nlayout:page\ntitle:cats and dogs\n-------\ncat",
+                "more_than_three_seconds",
+            )
+            .err();
             assert!(e != None, "no error found");
             match e {
                 Some(ParseError::InvalidConfig(config)) => {
@@ -250,8 +266,8 @@ mod render {
     }
 
     mod layouts {
-        use pretty_assertions::{assert_eq};
         use super::*;
+        use pretty_assertions::assert_eq;
 
         #[test]
         fn render_default_layout() {
@@ -274,9 +290,10 @@ mod render {
                 gen_render_mocks(
                     "---\r\nlayout: page\r\ntitle:cats and dogs\n---\r\ncat",
                     "render_globals",
-                    vec![
-                        ("default".to_string(), "{{global}} {{page.content}}".to_string())
-                        ],
+                    vec![(
+                        "default".to_string(),
+                        "{{global}} {{page.content}}".to_string()
+                    )],
                     &liquid::object!({
                         "test": 1
                     })

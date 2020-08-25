@@ -16,6 +16,7 @@ grass = "0.10.0"
 notify = "4.0.12"
 tiny_http = "0.7"
 mime_guess = "2"
+chrono = "0.4.15"
 
 [dev-dependencies]
 assert_cmd = "0.12"

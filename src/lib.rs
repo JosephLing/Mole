@@ -64,18 +64,21 @@ impl<'a> Build<'a> {
             );
                 } else {
                     for f in util::search_dir(&dir, "md") {
-                        if let Ok(cat) = File::open(&f) {
-                            let buffered = BufReader::new(cat);
-                            // &std::io::BufReader<std::path::PathBuf>
-                            match article::Article::parse(
-                                buffered,
-                                &util::path_file_name_to_string(&f).unwrap(),
-                            ) {
-                                Ok(art) => self.articles.push(art),
-                                Err(e) => error!("{:?}", e),
+                        let p = &util::path_file_name_to_string(&f).unwrap();
+                        if !p.starts_with("_"){
+                            if let Ok(cat) = File::open(&f) {
+                                let buffered = BufReader::new(cat);
+                                // &std::io::BufReader<std::path::PathBuf>
+                                match article::Article::parse(
+                                    buffered,
+                                    p,
+                                ) {
+                                    Ok(art) => self.articles.push(art),
+                                    Err(e) => error!("{:?}", e),
+                                }
+                            } else {
+                                error!("could not read {:?}", &f);
                             }
-                        } else {
-                            error!("could not read {:?}", &f);
                         }
                     }
                 }

@@ -3,6 +3,8 @@ use std::{
     io::{BufRead, BufReader},
 };
 
+use chrono::{NaiveDate, offset::FixedOffset};
+
 type ErrorMessage = String;
 
 #[derive(PartialEq)]
@@ -34,6 +36,7 @@ pub struct Config {
     pub categories: Vec<String>,
     pub tags: Vec<String>,
     pub visible: bool,
+    pub date: Option<NaiveDate>,
 }
 
 impl Default for Config {
@@ -47,6 +50,7 @@ impl Default for Config {
             categories: Vec::new(),
             tags: Vec::new(),
             visible: false,
+            date: None,
         }
     }
 }
@@ -171,6 +175,15 @@ fn parse_value_boolean(rest: &str, path: &str, line: &str, lineno: i8) -> Result
     }
 }
 
+fn parse_value_time(rest: &str, fmt: &str, path: &str, line: &str, lineno: i8) -> Result<NaiveDate, ParseError> {
+    match NaiveDate::parse_from_str(rest, fmt) {
+        Ok(date) => Ok(date),
+        Err(err) => Err(ParseError::InvalidValue(parse_error_message(
+            &("date error: ".to_owned() + &err.to_string()), path, line, 0, rest.len(), lineno,
+        ))),
+    }
+}
+
 fn parse_value_list(
     mut rest: &str,
     path: &str,
@@ -192,11 +205,11 @@ fn parse_value_list(
     let mut prev = 0;
     let mut in_string = false;
     let mut in_string_lower = false;
-    
-    if rest.starts_with("["){
-        if rest.ends_with("]"){
+
+    if rest.starts_with("[") {
+        if rest.ends_with("]") {
             rest = rest.trim_start_matches("[").trim_end_matches("]");
-        }else{
+        } else {
             return Err(ParseError::InvalidValue(parse_error_message(
                 "found opening square bracket for list but no opening bracket",
                 path,
@@ -214,9 +227,9 @@ fn parse_value_list(
         if item == b',' && !in_string && !in_string_lower {
             list.push(parse_value_string(&rest[prev..i], path, line, lineno)?.to_string());
             prev = i + 1;
-        }else if item == b'"' && !in_string_lower {
+        } else if item == b'"' && !in_string_lower {
             in_string = !in_string;
-        }else if item == b'\'' && !in_string {
+        } else if item == b'\'' && !in_string {
             in_string_lower = !in_string_lower;
         }
     }
@@ -234,20 +247,20 @@ fn parse_value_list(
             "found a string but no closing \"",
             path,
             line,
-            line.len()-1,
+            line.len() - 1,
             line.len(),
             lineno,
         )));
-    }else if in_string_lower{
+    } else if in_string_lower {
         return Err(ParseError::InvalidValue(parse_error_message(
             "found a string but no closing \'",
             path,
             line,
-            line.len()-1,
+            line.len() - 1,
             line.len(),
             lineno,
         )));
-    }else {
+    } else {
         list.push(parse_value_string(&rest[prev..], path, line, lineno)?.to_string());
     }
 
@@ -307,7 +320,8 @@ pub fn parse(data: BufReader<File>, path: &str) -> Result<(Config, String), Pars
                     config.categories = parse_value_list(rest.trim(), path, line, line_n)?
                 }
                 "tags" => config.tags = parse_value_list(rest.trim(), path, line, line_n)?,
-                "visible" => config.visible = parse_value_boolean(rest.trim(), path, line, line_n)?,
+                "titlebar" => config.visible = parse_value_boolean(rest.trim(), path, line, line_n)?,
+                "date" => config.date = Some(parse_value_time(rest.trim(), "%Y-%m-%d", path, line, line_n)?),
                 _ => {
                     return Err(ParseError::InvalidKey(parse_error_message(
                         "unknown key",
@@ -435,7 +449,6 @@ mod parse_tests {
         let list = parse_value_list(line, "test.txt", line, 1).unwrap();
         assert_eq!(vec!["\",a\"", "\"b\""], list);
     }
-
 
     #[test]
     fn parse_value_list_err() {
