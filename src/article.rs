@@ -55,23 +55,21 @@ impl Article {
         });
     }
 
-    pub fn pre_render(
+    fn pre_render(
         mut self,
         globals: &liquid::Object,
         liquid_parser: &liquid::Parser,
         md: bool,
-    ) -> Self {
+    ) -> Result<Self, CustomError> {
         // hack do proper error handling!!!
 
         let template = liquid_parser
-            .parse(&self.template)
-            .unwrap()
+            .parse(&self.template)?
             .render(&liquid::object!({
                 "global": globals,
                 "page": self.config_liquid,
                 "layout": self.config.layout
-            }))
-            .unwrap();
+            }))?;
 
         self.template = if md {
             let parser = Parser::new_ext(&template, Options::empty());
@@ -96,10 +94,11 @@ impl Article {
             }),
             "url":self.url,
         });
-        self
+
+        Ok(self)
     }
 
-    pub fn render(
+    fn render(
         &self,
         globals: &liquid::Object,
         parser: &liquid::Parser,
@@ -132,6 +131,12 @@ impl Article {
             "page": self.config_liquid,
             "layout": self.config.layout
         }))?)
+    }
+
+    pub fn true_render(self, global: &liquid::Object, parser: &liquid::Parser) -> Result<String, CustomError>{
+        Ok(self.pre_render(&global, parser, false)?
+        .pre_render(&global, parser, true)?
+        .render(&global, parser)?)
     }
 }
 
@@ -179,7 +184,7 @@ mod render {
             .build()
             .unwrap();
 
-        a.pre_render(global, &parser, true).render(global, &parser)
+        a.true_render(global, &parser)
     }
 
     mod parse_tests {

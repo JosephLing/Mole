@@ -135,7 +135,7 @@ fn serve(dest: &Path, ip: &str) -> Result<(), mole::error::CustomError> {
     info!("Ctrl-c to stop the server");
 
     // attempts to create a server
-    let server = Server::http(ip).map_err(|e| mole::error::CustomError(e.to_string()))?;
+    let server = Server::http(ip).map_err(|e| mole::error::CustomError::IOError(e.to_string()))?;
 
     for request in server.incoming_requests() {
         if let Err(e) = static_file_handler(&dest, request) {
@@ -257,12 +257,12 @@ impl BuildCommand {
                         }
                     }
                 }
-            } else {
-                error!(
-                    "{:?} is not a directory so could not find any files to build from",
-                    current
-                );
-            }
+            } 
+        } else{
+            error!(
+                "{:?} is not a directory so could not find any files to build from",
+                current
+            );
         }
     }
 }

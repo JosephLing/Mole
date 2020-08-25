@@ -14,12 +14,10 @@ pub fn no_subcommand() {
         );
 }
 
-// #[test]
-// pub fn build_no_path() {
-//     process::Command::cargo_bin("mole")
-//         .unwrap()
-//         .args(&["build"])
-//         .assert()
-//         .failure()
-//         .stderr(predicate::str::contains("The system cannot find the path specified.").from_utf8());
-// }
+#[test]
+pub fn build() {
+    process::Command::cargo_bin("mole")
+        .unwrap()
+        .args(&["build", "tests/resources/example1"])
+        .assert().success();
+}

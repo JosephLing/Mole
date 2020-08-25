@@ -3,7 +3,7 @@ use std::{
     io::{BufRead, BufReader},
 };
 
-use chrono::{NaiveDate, offset::FixedOffset};
+use chrono::{NaiveDate};
 
 type ErrorMessage = String;
 
@@ -179,7 +179,7 @@ fn parse_value_time(rest: &str, fmt: &str, path: &str, line: &str, lineno: i8) -
     match NaiveDate::parse_from_str(rest, fmt) {
         Ok(date) => Ok(date),
         Err(err) => Err(ParseError::InvalidValue(parse_error_message(
-            &("date error: ".to_owned() + &err.to_string()), path, line, 0, rest.len(), lineno,
+            &("date error: ".to_owned() + &err.to_string()), path, line, line.len()-rest.len(), line.len(), lineno,
         ))),
     }
 }

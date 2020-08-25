@@ -158,14 +158,14 @@ impl<'a> Build<'a> {
             output_path.push(PathBuf::from(&obj.url));
             info!("writing to {:?}", output_path);
 
-            let output: String = obj
-                .pre_render(&global, &parser, false)
-                .pre_render(&global, &parser, true)
-                .render(&global, &parser)
-                .unwrap();
 
-            let mut file = File::create(output_path).unwrap();
-            file.write_all(output.as_bytes()).unwrap();
+            match obj.true_render(&global, &parser) {
+                Ok(output) => {
+                    let mut file = File::create(output_path).unwrap();
+                    file.write_all(output.as_bytes()).unwrap();    
+                },
+                Err(e) => error!("{}", e)
+            }
         }
     }
 }

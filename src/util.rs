@@ -22,7 +22,7 @@ pub fn search_dir(path: &PathBuf, file_type: &str) -> Vec<PathBuf> {
 pub fn read_file(path: &Path) -> Result<String, CustomError> {
     match read_to_string(path)?.parse::<String>() {
         Ok(c) => Ok(c),
-        Err(e) => Err(CustomError(e.to_string())),
+        Err(e) => Err(CustomError::IOError(e.to_string())),
     }
 }
 
