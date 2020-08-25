@@ -1,7 +1,12 @@
 use crate::parse::{parse, Config, ParseError};
 
 use crate::error::CustomError;
-use log::warn;
+#[cfg(not(test))]
+use log::{info, warn};
+
+#[cfg(test)]
+use std::{println as warn, println as info};
+
 use pulldown_cmark::{html, Options, Parser};
 use std::{fs::File, io::BufReader};
 
@@ -102,6 +107,9 @@ impl Article {
         let template = if self.config.base_layout.is_empty() {
             if self.config.layout.is_empty() {
                 warn!("no base layout found");
+                if !self.template.contains("{{page.content}}") || !self.template.contains("{{ page.content }}"){
+                    warn!("potentailly missing out {{{{page.content}}}} in layout so none of the articles text will be displayed");
+                }
                 parser.parse(&format!("{{%- include '{0}' -%}}", self.config.layout))?
             } else {
                 warn!("no base layout found and no layout found");
@@ -109,6 +117,9 @@ impl Article {
             }
         } else {
             warn!("using baselayout: {:?}", self.config.base_layout);
+            if !self.template.contains("{{page.content}}") || !self.template.contains("{{ page.content }}"){
+                warn!("potentailly missing out {{{{page.content}}}} in layout so none of the articles text will be displayed");
+            }
             parser.parse(&format!("{{%- include '{0}' -%}}", self.config.base_layout))?
         };
 
@@ -132,6 +143,7 @@ mod render {
     type Partials = liquid::partials::EagerCompiler<liquid::partials::InMemorySource>;
 
     fn create_article(md: &str, path: &str) -> Result<Article, ParseError> {
+        
         // create a temp file
         let mut f = tempfile::Builder::new()
             .rand_bytes(0)
@@ -139,6 +151,7 @@ mod render {
             .suffix(path)
             .tempfile_in("")
             .unwrap();
+
         write!(f, "{}", md).unwrap();
 
         Ok(Article::parse(
@@ -225,12 +238,14 @@ mod render {
 
         #[test]
         fn more_than_three_dashes() {
-            assert_eq!(
-                Some(ParseError::InvalidConfig(
-                    "only 3 dashes allowed for config header".into()
-                )),
-                create_article("----\nlayout:page\ntitle:cats and dogs\n-------\ncat", "more_than_three_seconds").err()
-            );
+            let e = create_article("----\nlayout:page\ntitle:cats and dogs\n-------\ncat", "more_than_three_seconds").err();
+            assert!(e != None, "no error found");
+            match e {
+                Some(ParseError::InvalidConfig(config)) => {
+                    assert!(config.contains("configuration needs to start with '---' for the first line"), "expected string to end with 'configuration needs to start with '---' for the first line' found {}", config)
+                }
+                _ => assert!(false, "looking for ParseError::InvalidConfig found {:?}", e)
+            }
         }
     }
 
@@ -241,7 +256,7 @@ mod render {
         #[test]
         fn render_default_layout() {
             assert_eq!(
-                "<p>catscat</p>\n",
+                "cats",
                 gen_render_mocks(
                     "---\r\nlayout: page\r\ntitle:cats and dogs\n---\r\ncat",
                     "render_default_layout",
@@ -255,11 +270,13 @@ mod render {
         #[test]
         fn render_globals() {
             assert_eq!(
-                "test1cat",
+                "test1 <p>cat</p>\n",
                 gen_render_mocks(
                     "---\r\nlayout: page\r\ntitle:cats and dogs\n---\r\ncat",
                     "render_globals",
-                    vec![("default".to_string(), "{{global}}".to_string())],
+                    vec![
+                        ("default".to_string(), "{{global}} {{page.content}}".to_string())
+                        ],
                     &liquid::object!({
                         "test": 1
                     })
@@ -273,7 +290,7 @@ mod render {
             assert_eq!(
                 "1".to_string(),
                 gen_render_mocks(
-                    "---\r\nlayout: page\r\ntitle:cats and dogs---\r\ncat",
+                    "---\r\nlayout: page\r\ntitle:cats and dogs\n---\r\ncat",
                     "render_globals_scope",
                     vec![("default".to_string(), "{{global.test}}".to_string())],
                     &liquid::object!({

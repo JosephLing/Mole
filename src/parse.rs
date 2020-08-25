@@ -172,11 +172,12 @@ fn parse_value_boolean(rest: &str, path: &str, line: &str, lineno: i8) -> Result
 }
 
 fn parse_value_list(
-    rest: &str,
+    mut rest: &str,
     path: &str,
     line: &str,
     lineno: i8,
 ) -> Result<Vec<String>, ParseError> {
+    rest = rest.trim();
     if rest.is_empty() {
         return Err(ParseError::EmptyValue(parse_error_message(
             "empty",
@@ -188,22 +189,38 @@ fn parse_value_list(
         )));
     }
     let mut list: Vec<String> = Vec::new();
-    let mut index = 0;
-    let mut expect = false;
-    while !rest[index..].is_empty() {
-        // consume [ and ] but only if they are present
-        if let Some(new_index) = rest[index..].find(",") {
-            expect = true;
-            list.push(parse_value_string(&rest[index..new_index], path, line, lineno)?.to_string());
-            index = new_index + 1;
-        } else {
-            // if it is empty between index
-            list.push(parse_value_string(&rest[index..], path, line, lineno)?.to_string());
-            index = rest.len();
-            expect = false;
+    let mut prev = 0;
+    let mut in_string = false;
+    let mut in_string_lower = false;
+    
+    if rest.starts_with("["){
+        if rest.ends_with("]"){
+            rest = rest.trim_start_matches("[").trim_end_matches("]");
+        }else{
+            return Err(ParseError::InvalidValue(parse_error_message(
+                "found opening square bracket for list but no opening bracket",
+                path,
+                line,
+                0,
+                line.len(),
+                lineno,
+            )));
         }
     }
-    if expect {
+
+    let bytes = rest.as_bytes();
+
+    for (i, &item) in bytes.iter().enumerate() {
+        if item == b',' && !in_string && !in_string_lower {
+            list.push(parse_value_string(&rest[prev..i], path, line, lineno)?.to_string());
+            prev = i + 1;
+        }else if item == b'"' && !in_string_lower {
+            in_string = !in_string;
+        }else if item == b'\'' && !in_string {
+            in_string_lower = !in_string_lower;
+        }
+    }
+    if prev == rest.len() {
         return Err(ParseError::InvalidValue(parse_error_message(
             "value expected after semi-colon",
             path,
@@ -212,7 +229,28 @@ fn parse_value_list(
             line.len() + 5,
             lineno,
         )));
+    } else if in_string {
+        return Err(ParseError::InvalidValue(parse_error_message(
+            "found a string but no closing \"",
+            path,
+            line,
+            line.len()-1,
+            line.len(),
+            lineno,
+        )));
+    }else if in_string_lower{
+        return Err(ParseError::InvalidValue(parse_error_message(
+            "found a string but no closing \'",
+            path,
+            line,
+            line.len()-1,
+            line.len(),
+            lineno,
+        )));
+    }else {
+        list.push(parse_value_string(&rest[prev..], path, line, lineno)?.to_string());
     }
+
     Ok(list)
 }
 
@@ -312,5 +350,104 @@ pub fn parse(data: BufReader<File>, path: &str) -> Result<(Config, String), Pars
             "missing configuration 'layout' field or 'base_layout' to be set to a custom value"
                 .into(),
         ));
+    }
+}
+
+#[cfg(test)]
+mod parse_tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn parse_key_test() {
+        let line = "hello: world";
+        let (key, rest) = parse_key(line, "test.txt", line, 1).unwrap();
+        assert_eq!(key, "hello");
+        assert_eq!(rest, " world");
+    }
+
+    #[test]
+    fn parse_key_no_semicolon() {
+        let line = "hello  world";
+        let err = parse_key(line, "test.txt", line, 1).err();
+        match err {
+            Some(ParseError::InvalidKey(config)) => assert!(
+                config.contains("no semicolon found"),
+                "expected 'no semicolon found' in {}",
+                config
+            ),
+            _ => assert!(false, "expected error"),
+        }
+    }
+
+    #[test]
+    fn parse_value_list_multi_spaced() {
+        let line = "a, b, c, d";
+        let list = parse_value_list(line, "test.txt", line, 1).unwrap();
+        assert_eq!(vec!["a", "b", "c", "d"], list);
+    }
+
+    #[test]
+    fn parse_value_list_single() {
+        let line = "a";
+        let list = parse_value_list(line, "test.txt", line, 1).unwrap();
+        assert_eq!(vec!["a"], list);
+    }
+
+    #[test]
+    fn parse_value_list_double_no_spaced() {
+        let line = "a, b";
+        let list = parse_value_list(line, "test.txt", line, 1).unwrap();
+        assert_eq!(vec!["a", "b"], list);
+    }
+
+    #[test]
+    fn parse_value_list_square_brackets() {
+        let line = "[a, b]";
+        let list = parse_value_list(line, "test.txt", line, 1).unwrap();
+        assert_eq!(vec!["a", "b"], list);
+    }
+
+    #[test]
+    fn parse_value_list_sauare_brackets_err() {
+        let line = "[a, b";
+        let err = parse_value_list(line, "test.txt", line, 1).err();
+        match err {
+            Some(ParseError::InvalidValue(config)) => assert!(
+                config.contains("found opening square bracket for list but no opening bracket"),
+                "found opening square bracket for list but no opening bracket' in {}",
+                config
+            ),
+            _ => assert!(false, "expected error"),
+        }
+    }
+
+    #[test]
+    fn parse_value_list_single_quote() {
+        let line = "',a', 'b'";
+        let list = parse_value_list(line, "test.txt", line, 1).unwrap();
+        assert_eq!(vec!["',a'", "'b'"], list);
+    }
+
+    #[test]
+    fn parse_value_list_double_quote() {
+        let line = "\",a\", \"b\"";
+        let list = parse_value_list(line, "test.txt", line, 1).unwrap();
+        assert_eq!(vec!["\",a\"", "\"b\""], list);
+    }
+
+
+    #[test]
+    fn parse_value_list_err() {
+        let line = "a, b,";
+        let err = parse_value_list(line, "test.txt", line, 1).err();
+        match err {
+            Some(ParseError::InvalidValue(config)) => assert!(
+                config.contains("value expected after semi-colon"),
+                "expected 'value expected after semi-colon' in {}",
+                config
+            ),
+            _ => assert!(false, "expected error"),
+        }
     }
 }
