@@ -3,7 +3,7 @@ use std::{
     io::{BufRead, BufReader},
 };
 
-use chrono::{NaiveDate};
+use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 
 type ErrorMessage = String;
 
@@ -36,7 +36,7 @@ pub struct Config {
     pub categories: Vec<String>,
     pub tags: Vec<String>,
     pub visible: bool,
-    pub date: Option<NaiveDate>,
+    pub date: Option<NaiveDateTime>,
 }
 
 impl Default for Config {
@@ -175,12 +175,25 @@ fn parse_value_boolean(rest: &str, path: &str, line: &str, lineno: i8) -> Result
     }
 }
 
-fn parse_value_time(rest: &str, fmt: &str, path: &str, line: &str, lineno: i8) -> Result<NaiveDate, ParseError> {
-    match NaiveDate::parse_from_str(rest, fmt) {
-        Ok(date) => Ok(date),
-        Err(err) => Err(ParseError::InvalidValue(parse_error_message(
-            &("date error: ".to_owned() + &err.to_string()), path, line, line.len()-rest.len(), line.len(), lineno,
-        ))),
+fn parse_value_time(
+    rest: &str,
+    path: &str,
+    line: &str,
+    lineno: i8,
+) -> Result<NaiveDateTime, ParseError> {
+    match NaiveDate::parse_from_str(rest, "%Y-%m-%d") {
+        Ok(date) => Ok(date.and_time(NaiveTime::from_hms_milli(0,0,0, 0))),
+        Err(_) => match NaiveDateTime::parse_from_str(rest, "%Y-%m-%d %H:%M") {
+            Ok(date) => Ok(date),
+            Err(err) => Err(ParseError::InvalidValue(parse_error_message(
+                &("date error: ".to_owned() + &err.to_string() + " expected Y-m-d or Y-m-d h:m"),
+                path,
+                line,
+                line.len() - rest.len(),
+                line.len(),
+                lineno,
+            ))),
+        },
     }
 }
 
@@ -320,8 +333,17 @@ pub fn parse(data: BufReader<File>, path: &str) -> Result<(Config, String), Pars
                     config.categories = parse_value_list(rest.trim(), path, line, line_n)?
                 }
                 "tags" => config.tags = parse_value_list(rest.trim(), path, line, line_n)?,
-                "titlebar" => config.visible = parse_value_boolean(rest.trim(), path, line, line_n)?,
-                "date" => config.date = Some(parse_value_time(rest.trim(), "%Y-%m-%d", path, line, line_n)?),
+                "titlebar" => {
+                    config.visible = parse_value_boolean(rest.trim(), path, line, line_n)?
+                }
+                "date" => {
+                    config.date = Some(parse_value_time(
+                        rest.trim(),
+                        path,
+                        line,
+                        line_n,
+                    )?)
+                }
                 _ => {
                     return Err(ParseError::InvalidKey(parse_error_message(
                         "unknown key",
