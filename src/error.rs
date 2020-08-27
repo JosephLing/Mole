@@ -1,9 +1,9 @@
 use std::fmt::Display;
 
 #[derive(Debug, PartialEq)]
-pub enum CustomError{
+pub enum CustomError {
     IOError(String),
-    LiquidError(String)
+    LiquidError(String),
 }
 
 impl Display for CustomError {

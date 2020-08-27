@@ -1,8 +1,3 @@
-use std::{
-    fs::File,
-    io::{BufRead, BufReader},
-};
-
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 
 type ErrorMessage = String;
@@ -26,42 +21,7 @@ impl std::fmt::Debug for ParseError {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Config {
-    pub layout: String,
-    pub base_layout: String,
-    pub title: String,
-    pub description: String,
-    pub permalink: String,
-    pub categories: Vec<String>,
-    pub tags: Vec<String>,
-    pub visible: bool,
-    pub date: Option<NaiveDateTime>,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Config {
-            layout: String::from(""),
-            base_layout: String::from("default"),
-            title: String::from(""),
-            description: String::from(""),
-            permalink: String::from(""),
-            categories: Vec::new(),
-            tags: Vec::new(),
-            visible: false,
-            date: None,
-        }
-    }
-}
-
-impl Config {
-    fn is_valid(&self) -> bool {
-        !(self.layout.is_empty() || self.title.is_empty())
-    }
-}
-
-fn parse_error_message(
+pub fn parse_error_message(
     message: &str,
     path: &str,
     line: &str,
@@ -102,7 +62,7 @@ fn parse_error_message(
     msg
 }
 
-fn parse_key<'a>(
+pub fn parse_key<'a>(
     rest: &'a str,
     path: &str,
     line: &str,
@@ -131,7 +91,7 @@ fn parse_key<'a>(
     )))
 }
 
-fn parse_value_string<'a>(
+pub fn parse_value_string<'a>(
     rest: &'a str,
     path: &str,
     line: &str,
@@ -161,7 +121,12 @@ fn parse_value_string<'a>(
     Ok(rest)
 }
 
-fn parse_value_boolean(rest: &str, path: &str, line: &str, lineno: i8) -> Result<bool, ParseError> {
+pub fn parse_value_boolean(
+    rest: &str,
+    path: &str,
+    line: &str,
+    lineno: i8,
+) -> Result<bool, ParseError> {
     match rest.parse::<bool>() {
         Ok(b) => Ok(b),
         Err(_) => Err(ParseError::InvalidValue(parse_error_message(
@@ -175,14 +140,14 @@ fn parse_value_boolean(rest: &str, path: &str, line: &str, lineno: i8) -> Result
     }
 }
 
-fn parse_value_time(
+pub fn parse_value_time(
     rest: &str,
     path: &str,
     line: &str,
     lineno: i8,
 ) -> Result<NaiveDateTime, ParseError> {
     match NaiveDate::parse_from_str(rest, "%Y-%m-%d") {
-        Ok(date) => Ok(date.and_time(NaiveTime::from_hms_milli(0,0,0, 0))),
+        Ok(date) => Ok(date.and_time(NaiveTime::from_hms_milli(0, 0, 0, 0))),
         Err(_) => match NaiveDateTime::parse_from_str(rest, "%Y-%m-%d %H:%M") {
             Ok(date) => Ok(date),
             Err(err) => Err(ParseError::InvalidValue(parse_error_message(
@@ -197,7 +162,7 @@ fn parse_value_time(
     }
 }
 
-fn parse_value_list(
+pub fn parse_value_list(
     mut rest: &str,
     path: &str,
     line: &str,
@@ -278,115 +243,6 @@ fn parse_value_list(
     }
 
     Ok(list)
-}
-
-/// BufReader or read_to_string() is the key api choice (mmap alternatively as well)
-/// the difficulty getting the rest of the file after parsing the config
-/// BufReader<R> can improve the speed of programs that make small and repeated read calls to the same file or network socket.
-/// It does not help when reading very large amounts at once, or reading just one or a few times.
-/// It also provides no advantage when reading from a source that is already in memory, like a Vec<u8>.
-pub fn parse(data: BufReader<File>, path: &str) -> Result<(Config, String), ParseError> {
-    let mut found_config = false;
-    let mut line_n = 1;
-    let mut config = Config::default();
-    // we set the defaults here e.g. default_layout: "default"
-    // therefore when we get default_layout: "" then it overwrites the default
-    let lines = data.lines();
-    let mut body = "".to_string();
-    let mut reached_end = false;
-    for line in lines {
-        let line = &line.unwrap();
-        if !found_config && line == "---" {
-            found_config = true;
-            line_n += 1;
-        } else if found_config && line == "---" {
-            reached_end = true;
-            found_config = false;
-            line_n += 1;
-        } else if reached_end {
-            body += &line;
-            body += "\n";
-        } else if found_config {
-            let (key, rest) = parse_key(&line, path, line, line_n)?;
-            match key {
-                // match each thing but then need to work out how to map it....
-                // maybe look into the from string implementation???
-                "layout" => {
-                    config.layout = parse_value_string(rest.trim(), path, line, line_n)?.to_string()
-                }
-                "base_layout" => {
-                    config.base_layout =
-                        parse_value_string(rest.trim(), path, line, line_n)?.to_string()
-                }
-                "title" => {
-                    config.title = parse_value_string(rest.trim(), path, line, line_n)?.to_string()
-                }
-                "description" => {
-                    config.description =
-                        parse_value_string(rest.trim(), path, line, line_n)?.to_string()
-                }
-                "permalink" => {
-                    config.permalink =
-                        parse_value_string(rest.trim(), path, line, line_n)?.to_string()
-                }
-                "categories" => {
-                    config.categories = parse_value_list(rest.trim(), path, line, line_n)?
-                }
-                "tags" => config.tags = parse_value_list(rest.trim(), path, line, line_n)?,
-                "titlebar" => {
-                    config.visible = parse_value_boolean(rest.trim(), path, line, line_n)?
-                }
-                "date" => {
-                    config.date = Some(parse_value_time(
-                        rest.trim(),
-                        path,
-                        line,
-                        line_n,
-                    )?)
-                }
-                _ => {
-                    return Err(ParseError::InvalidKey(parse_error_message(
-                        "unknown key",
-                        path,
-                        line,
-                        0,
-                        line.len() - 1,
-                        line_n,
-                    )))
-                }
-            }
-            line_n += 1;
-        } else {
-            return Err(ParseError::InvalidConfig(parse_error_message(
-                "configuration needs to start with '---' for the first line",
-                path,
-                line,
-                0,
-                line.len(),
-                line_n,
-            )));
-        }
-    }
-    if config.is_valid() {
-        return Ok((config, body));
-    } else if line_n == 2 {
-        return Err(ParseError::InvalidConfig(
-            format!("empty config no key value pairs found in {}", "test.txt").into(),
-        ));
-    } else if !reached_end {
-        return Err(ParseError::InvalidConfig(
-            "no at '---' for the last line of the configuration".into(),
-        ));
-    } else if config.title.is_empty() {
-        return Err(ParseError::InvalidConfig(
-            "missing configuration 'title' field".into(),
-        ));
-    } else {
-        return Err(ParseError::InvalidConfig(
-            "missing configuration 'layout' field or 'base_layout' to be set to a custom value"
-                .into(),
-        ));
-    }
 }
 
 #[cfg(test)]

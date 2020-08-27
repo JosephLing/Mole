@@ -19,5 +19,6 @@ pub fn build() {
     process::Command::cargo_bin("mole")
         .unwrap()
         .args(&["build", "tests/resources/example1"])
-        .assert().success();
+        .assert()
+        .success();
 }

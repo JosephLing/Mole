@@ -257,8 +257,8 @@ impl BuildCommand {
                         }
                     }
                 }
-            } 
-        } else{
+            }
+        } else {
             error!(
                 "{:?} is not a directory so could not find any files to build from",
                 current

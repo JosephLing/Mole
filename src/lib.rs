@@ -65,14 +65,11 @@ impl<'a> Build<'a> {
                 } else {
                     for f in util::search_dir(&dir, "md") {
                         let p = &util::path_file_name_to_string(&f).unwrap();
-                        if !p.starts_with("_"){
+                        if !p.starts_with("_") {
                             if let Ok(cat) = File::open(&f) {
                                 let buffered = BufReader::new(cat);
                                 // &std::io::BufReader<std::path::PathBuf>
-                                match article::Article::parse(
-                                    buffered,
-                                    p,
-                                ) {
+                                match article::Article::parse(buffered, p) {
                                     Ok(art) => self.articles.push(art),
                                     Err(e) => error!("{:?}", e),
                                 }
@@ -158,13 +155,12 @@ impl<'a> Build<'a> {
             output_path.push(PathBuf::from(&obj.url));
             info!("writing to {:?}", output_path);
 
-
             match obj.true_render(&global, &parser) {
                 Ok(output) => {
                     let mut file = File::create(output_path).unwrap();
-                    file.write_all(output.as_bytes()).unwrap();    
-                },
-                Err(e) => error!("{}", e)
+                    file.write_all(output.as_bytes()).unwrap();
+                }
+                Err(e) => error!("{}", e),
             }
         }
     }

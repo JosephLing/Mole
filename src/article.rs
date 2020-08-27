@@ -1,14 +1,56 @@
-use crate::parse::{parse, Config, ParseError};
+use crate::parse::{
+    parse_error_message, parse_key, parse_value_boolean, parse_value_list, parse_value_string,
+    parse_value_time, ParseError,
+};
 
 use crate::error::CustomError;
 #[cfg(not(test))]
-use log::{warn};
+use log::warn;
 
 #[cfg(test)]
-use std::{println as warn};
+use std::println as warn;
 
+use chrono::NaiveDateTime;
 use pulldown_cmark::{html, Options, Parser};
-use std::{fs::File, io::BufReader};
+use std::{
+    fs::File,
+    io::{BufRead, BufReader},
+};
+
+#[derive(Debug, PartialEq)]
+pub struct Config {
+    pub layout: String,
+    pub base_layout: String,
+    pub title: String,
+    pub description: String,
+    pub permalink: String,
+    pub categories: Vec<String>,
+    pub tags: Vec<String>,
+    pub visible: bool,
+    pub date: Option<NaiveDateTime>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            layout: String::from(""),
+            base_layout: String::from("default"),
+            title: String::from(""),
+            description: String::from(""),
+            permalink: String::from(""),
+            categories: Vec::new(),
+            tags: Vec::new(),
+            visible: false,
+            date: None,
+        }
+    }
+}
+
+impl Config {
+    fn is_valid(&self) -> bool {
+        !(self.layout.is_empty() || self.title.is_empty())
+    }
+}
 
 #[derive(Debug)]
 pub struct Article {
@@ -16,6 +58,118 @@ pub struct Article {
     pub config: Config,
     pub url: String,
     pub config_liquid: liquid::Object,
+}
+
+/// BufReader or read_to_string() is the key api choice (mmap alternatively as well)
+/// the difficulty getting the rest of the file after parsing the config
+/// BufReader<R> can improve the speed of programs that make small and repeated read calls to the same file or network socket.
+/// It does not help when reading very large amounts at once, or reading just one or a few times.
+/// It also provides no advantage when reading from a source that is already in memory, like a Vec<u8>.
+pub fn parse(data: BufReader<File>, path: &str) -> Result<(Config, String), ParseError> {
+    let mut found_config = false;
+    let mut line_n = 1;
+    let mut config = Config::default();
+    // we set the defaults here e.g. default_layout: "default"
+    // therefore when we get default_layout: "" then it overwrites the default
+    let lines = data.lines();
+    let mut body = "".to_string();
+    let mut reached_end = false;
+    for line in lines {
+        let line = match &line {
+            Ok(line) => line,
+            Err(err) => Err(ParseError::InvalidValue(parse_error_message(
+                &err.to_string(),
+                path,
+                "",
+                0,
+                10,
+                line_n,
+            )))?,
+        };
+        if !found_config && line == "---" {
+            found_config = true;
+            line_n += 1;
+        } else if found_config && line == "---" {
+            reached_end = true;
+            found_config = false;
+            line_n += 1;
+        } else if reached_end {
+            body += &line;
+            body += "\n";
+        } else if found_config {
+            let (key, rest) = parse_key(&line, path, line, line_n)?;
+            match key {
+                // match each thing but then need to work out how to map it....
+                // maybe look into the from string implementation???
+                "layout" => {
+                    config.layout = parse_value_string(rest.trim(), path, line, line_n)?.to_string()
+                }
+                "base_layout" => {
+                    config.base_layout =
+                        parse_value_string(rest.trim(), path, line, line_n)?.to_string()
+                }
+                "title" => {
+                    config.title = parse_value_string(rest.trim(), path, line, line_n)?.to_string()
+                }
+                "description" => {
+                    config.description =
+                        parse_value_string(rest.trim(), path, line, line_n)?.to_string()
+                }
+                "permalink" => {
+                    config.permalink =
+                        parse_value_string(rest.trim(), path, line, line_n)?.to_string()
+                }
+                "categories" => {
+                    config.categories = parse_value_list(rest.trim(), path, line, line_n)?
+                }
+                "tags" => config.tags = parse_value_list(rest.trim(), path, line, line_n)?,
+                "titlebar" => {
+                    config.visible = parse_value_boolean(rest.trim(), path, line, line_n)?
+                }
+                "date" => config.date = Some(parse_value_time(rest.trim(), path, line, line_n)?),
+                _ => {
+                    return Err(ParseError::InvalidKey(parse_error_message(
+                        "unknown key",
+                        path,
+                        line,
+                        0,
+                        line.len() - 1,
+                        line_n,
+                    )))
+                }
+            }
+            line_n += 1;
+        } else {
+            return Err(ParseError::InvalidConfig(parse_error_message(
+                "configuration needs to start with '---' for the first line",
+                path,
+                line,
+                0,
+                line.len(),
+                line_n,
+            )));
+        }
+    }
+    if config.is_valid() {
+        return Ok((config, body));
+    } else if line_n == 2 {
+        return Err(ParseError::InvalidConfig(
+            format!("empty config no key value pairs found in {}", "test.txt").into(),
+        ));
+    } else if !reached_end {
+        return Err(ParseError::InvalidConfig(
+            "no at '---' for the last line of the configuration".into(),
+        ));
+    } else if config.title.is_empty() {
+        return Err(ParseError::InvalidConfig(
+            "missing configuration 'title' field".into(),
+        ));
+    } else {
+        return Err(ParseError::InvalidConfig(
+            "missing configuration 'layout' field or 'base_layout' to be set to a custom value"
+                .into(),
+        ));
+    }
 }
 
 impl Article {
@@ -133,10 +287,15 @@ impl Article {
         }))?)
     }
 
-    pub fn true_render(self, global: &liquid::Object, parser: &liquid::Parser) -> Result<String, CustomError>{
-        Ok(self.pre_render(&global, parser, false)?
-        .pre_render(&global, parser, true)?
-        .render(&global, parser)?)
+    pub fn true_render(
+        self,
+        global: &liquid::Object,
+        parser: &liquid::Parser,
+    ) -> Result<String, CustomError> {
+        Ok(self
+            .pre_render(&global, parser, false)?
+            .pre_render(&global, parser, true)?
+            .render(&global, parser)?)
     }
 }
 
