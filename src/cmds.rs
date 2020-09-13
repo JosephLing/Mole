@@ -191,6 +191,10 @@ pub struct BuildCommand {
     #[argh(switch)]
     /// version of the tool
     version: bool,
+
+    #[argh(switch)]
+    /// shows full backtrace with file locations for liquid errors
+    backtrace: bool,
 }
 
 impl BuildCommand {
@@ -206,7 +210,7 @@ impl BuildCommand {
         self.scss = current.join(self.scss);
         if current.is_dir() {
             info!("building");
-            mole::Build::new(&self.dest)
+            mole::Build::new(&self.dest, self.backtrace)
                 .includes(&self.include, false)
                 .includes(&self.layouts, true)
                 .articles(&vec![&self.articles, &PathBuf::from(current)])
@@ -246,7 +250,7 @@ impl BuildCommand {
                             Ok(event) => {
                                 info!("{:?}", event);
                                 info!("re-building");
-                                mole::Build::new(&self.dest)
+                                mole::Build::new(&self.dest, self.backtrace)
                                     .includes(&self.include, false)
                                     .includes(&self.layouts, true)
                                     .articles(&vec![&self.articles, &PathBuf::from(current)])

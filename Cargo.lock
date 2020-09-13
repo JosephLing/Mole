@@ -532,9 +532,9 @@ dependencies = [
 
 [[package]]
 name = "kstring"
-version = "0.1.1"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fbbc30beb80d56ddf6346e935c7abcba96329ee5c5a4cde8984a4e6b6f18b58e"
+checksum = "c57805476d785f188945321cb408a1f240b62240d1f930096c1abcf08a00b4b4"
 dependencies = [
  "serde",
 ]
@@ -568,9 +568,9 @@ checksum = "9457b06509d27052635f90d6466700c65095fdf75409b3fbdd903e988b886f49"
 
 [[package]]
 name = "liquid"
-version = "0.20.1"
+version = "0.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "503b7cd741bf1a6c01bfdf697ba13f67e2c8e152920af25596763bb0dbcd6215"
+checksum = "9f3d2ea80af5c2da5b2984fd98613db331dc9ad098782847b090a6a2405e5592"
 dependencies = [
  "doc-comment",
  "kstring",
@@ -582,9 +582,9 @@ dependencies = [
 
 [[package]]
 name = "liquid-core"
-version = "0.20.2"
+version = "0.21.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4dc58422728185d54cd044bba4d45a2ef2a7111a421f84d344f65629949de4f1"
+checksum = "d683508a7bb9565349c3610408188dc6c743c66d1add07097f1dbd0ebb8bc35d"
 dependencies = [
  "anymap",
  "chrono",
@@ -599,9 +599,9 @@ dependencies = [
 
 [[package]]
 name = "liquid-derive"
-version = "0.20.1"
+version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cfef35f37f019e5dfc550517045078317f5d37afa64cbf246ecde616a7091cb0"
+checksum = "c138e9b1b94270041bec237898fac64cec12b533675ddff67956a97be42aca2b"
 dependencies = [
  "proc-macro2",
  "proc-quote",
@@ -610,9 +610,9 @@ dependencies = [
 
 [[package]]
 name = "liquid-lib"
-version = "0.20.2"
+version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c4aa47dc08fd8c6c8aea70a0da2a98c0f0416d49e8b03c5c46354ef559bee3c"
+checksum = "aa430745b78473580485ced0b9ff2403877c9ba13f3eeceaffb679ac641929c5"
 dependencies = [
  "chrono",
  "itertools",

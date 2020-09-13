@@ -15,6 +15,7 @@ use pulldown_cmark::{html, Options, Parser};
 use std::{
     fs::File,
     io::{BufRead, BufReader},
+    path::PathBuf,
 };
 
 #[derive(Debug, PartialEq)]
@@ -65,15 +66,18 @@ pub struct Article {
 /// BufReader<R> can improve the speed of programs that make small and repeated read calls to the same file or network socket.
 /// It does not help when reading very large amounts at once, or reading just one or a few times.
 /// It also provides no advantage when reading from a source that is already in memory, like a Vec<u8>.
-pub fn parse(data: BufReader<File>, path: &str) -> Result<(Config, String), ParseError> {
+pub fn parse(data: BufReader<File>, path: &PathBuf) -> Result<(Config, String), ParseError> {
     let mut found_config = false;
     let mut line_n = 1;
     let mut config = Config::default();
+
     // we set the defaults here e.g. default_layout: "default"
     // therefore when we get default_layout: "" then it overwrites the default
     let lines = data.lines();
+
     let mut body = "".to_string();
     let mut reached_end = false;
+
     for line in lines {
         let line = match &line {
             Ok(line) => line,
@@ -175,7 +179,7 @@ pub fn parse(data: BufReader<File>, path: &str) -> Result<(Config, String), Pars
 impl Article {
     /// header is in a --- --- block with new lines
     /// the rest of the doc is template in markdown
-    pub fn parse(md: BufReader<File>, path: &str) -> Result<Article, ParseError> {
+    pub fn parse(md: BufReader<File>, path: &PathBuf) -> Result<Article, ParseError> {
         // markdown parsing NOTE: we are assuming that we are dealing with markdown hear!!!
         let (config, content) = parse(md, path)?;
 
@@ -263,6 +267,7 @@ impl Article {
                 if !self.template.contains("{{page.content}}")
                     || !self.template.contains("{{ page.content }}")
                 {
+                    //TODO: is this warning necessary and accurate????
                     warn!("potentailly missing out {{{{page.content}}}} in layout so none of the articles text will be displayed");
                 }
                 parser.parse(&format!("{{%- include '{0}' -%}}", self.config.layout))?
@@ -275,7 +280,8 @@ impl Article {
             if !self.template.contains("{{page.content}}")
                 || !self.template.contains("{{ page.content }}")
             {
-                warn!("potentailly missing out {{{{page.content}}}} in layout so none of the articles text will be displayed");
+                //TODO: is this warning necessary and accurate????
+                warn!("potentailly missing out {{{{page.content}}}} in layout so none of the  articles text will be displayed");
             }
             parser.parse(&format!("{{%- include '{0}' -%}}", self.config.base_layout))?
         };
@@ -322,7 +328,7 @@ mod render {
 
         Ok(Article::parse(
             BufReader::new(File::open(path).unwrap()),
-            path,
+            &std::path::PathBuf::from(path),
         )?)
     }
 
@@ -347,9 +353,8 @@ mod render {
     }
 
     mod parse_tests {
-        use pretty_assertions::assert_eq;
-
         use super::*;
+        use pretty_assertions::assert_eq;
 
         #[test]
         fn empty_content() {
@@ -364,7 +369,7 @@ mod render {
         #[test]
         fn test_empty_template() {
             let a: Article = create_article(
-                "---\nlayout:page\ntitle:cats and dogs\n---\n",
+                "---\nlayout:page\ntitle:cats and dogs\n---",
                 "test_empty_template",
             )
             .unwrap();

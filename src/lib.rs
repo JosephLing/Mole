@@ -1,4 +1,5 @@
 pub mod article;
+use article::Article;
 use log::{error, info, warn};
 use std::collections::HashMap;
 use std::fs::read_to_string;
@@ -16,15 +17,22 @@ pub struct Build<'a> {
     articles: Vec<article::Article>,
     layouts: Vec<String>,
     output: &'a PathBuf,
+
+    backtrace: bool,
+    article_paths: Vec<String>,
+    includes_paths: HashMap<String, String>,
 }
 
 impl<'a> Build<'a> {
-    pub fn new(output: &'a PathBuf) -> Self {
+    pub fn new(output: &'a PathBuf, backtrace: bool) -> Self {
         Build {
             includes: Partials::empty(),
             layouts: Vec::new(),
             articles: Vec::new(),
             output,
+            backtrace,
+            article_paths: Vec::new(),
+            includes_paths: HashMap::new(),
         }
     }
 
@@ -32,22 +40,42 @@ impl<'a> Build<'a> {
     /// in util:search_dir and util::path_file_name_to_string
     pub fn includes(mut self, dir: &'a PathBuf, layout: bool) -> Self {
         if dir.exists() && dir.is_dir() {
-            for file_path in util::search_dir(dir, "html") {
-                //TODO: error handling!!!
-                let content = util::read_file(&file_path).unwrap();
-                if let Some(rel_path) = util::path_file_name_to_string(&file_path) {
-                    if layout {
-                        info!("new layout {:?}", rel_path);
-                    } else {
-                        info!("new include {:?}", rel_path);
+            for file_path in util::search_dir(dir, "html", false) {
+                if let Ok(content) = util::read_file(&file_path) {
+                    match util::path_file_name_to_string(&file_path) {
+                        Ok(rel_path) => {
+                            if layout {
+                                info!("new layout {:?}", rel_path);
+                            } else {
+                                info!("new include {:?}", rel_path);
+                            }
+
+                            // only including error information when backtrace enabled otherwise we just ignore it
+                            if self.backtrace {
+                                self.includes_paths
+                                    .insert(rel_path.clone(), format!("{:?}", file_path));
+                            }
+
+                            // layouts and includes both liquid templates
+                            if self.includes.add(&rel_path, content) {
+                                if layout {
+                                    error!("\"{:?}\" already exists as a layout, note: layouts and includes share the same name", rel_path);
+                                } else {
+                                    error!("\"{:?}\" already exists as a includes, note: layouts and includes share the same name", rel_path);
+                                }
+                            }
+
+                            if layout {
+                                // this is used to check that articles have a valid layout
+                                self.layouts.push(rel_path);
+                            }
+                        }
+                        Err(e) => error!("{:?}", e),
                     }
-                    self.includes.add(&rel_path, content);
-                    if layout {
-                        self.layouts.push(rel_path);
-                    }
+                } else {
+                    error!("unable to read file {:?}", file_path);
                 }
             }
-        // info!("found {:?} templates", v.len());
         } else {
             error!("{:?} is not a path or directory", &dir);
         }
@@ -63,19 +91,17 @@ impl<'a> Build<'a> {
                 "empty layout list, please load in layout template files before parsing articles"
             );
                 } else {
-                    for f in util::search_dir(&dir, "md") {
-                        let p = &util::path_file_name_to_string(&f).unwrap();
-                        if !p.starts_with("_") {
-                            if let Ok(cat) = File::open(&f) {
-                                let buffered = BufReader::new(cat);
-                                // &std::io::BufReader<std::path::PathBuf>
-                                match article::Article::parse(buffered, p) {
-                                    Ok(art) => self.articles.push(art),
-                                    Err(e) => error!("{:?}", e),
+                    for f in util::search_dir(&dir, "md", true) {
+                        if let Ok(cat) = File::open(&f) {
+                            match article::Article::parse(BufReader::new(cat), &f) {
+                                Ok(art) => {
+                                    self.articles.push(art);
+                                    self.article_paths.push(format!("{:?}", &f));
                                 }
-                            } else {
-                                error!("could not read {:?}", &f);
+                                Err(e) => error!("{:?}", e),
                             }
+                        } else {
+                            error!("Could not read {:?}", &f);
                         }
                     }
                 }
@@ -87,11 +113,9 @@ impl<'a> Build<'a> {
         self
     }
 
-    /// TODO: ignore _files
     pub fn sass(self, dir: &'a PathBuf, load_paths: &Vec<&Path>) -> Self {
         if dir.exists() && dir.is_dir() {
-            for f in util::search_dir(dir, "scss") {
-                info!("{:?}", f);
+            for f in util::search_dir(dir, "scss", true) {
                 if let Ok(data) = read_to_string(&f) {
                     match grass::from_string(
                         data,
@@ -105,7 +129,6 @@ impl<'a> Build<'a> {
 
                             let mut file = File::create(output_path).unwrap();
                             file.write_all(css.as_bytes()).unwrap();
-                            //TODO: write to disk
                         }
                         Err(e) => warn!("parsing sccs {:?} caused {:?}", &f, e),
                     }
@@ -120,6 +143,7 @@ impl<'a> Build<'a> {
     }
 
     pub fn run(self) {
+        info!("run");
         let mut global_articles: Vec<&liquid::Object> = Vec::new();
         let mut global_tags: HashMap<&str, Vec<&str>> = HashMap::new();
         let mut global_cats: HashMap<&str, Vec<&str>> = HashMap::new();
@@ -128,9 +152,8 @@ impl<'a> Build<'a> {
             .partials(self.includes)
             .build()
             .unwrap();
+
         for obj in &self.articles {
-            // global_tags.push(&obj.config_liquid.tags);
-            // global_cats.push(&obj.config_liquid.cats);
             global_articles.push(&obj.config_liquid);
             for tag in &obj.config.tags {
                 global_tags.entry(tag).or_insert(Vec::new()).push(&obj.url);
@@ -141,26 +164,57 @@ impl<'a> Build<'a> {
             }
         }
 
+        // One of the key things here is that articles is the raw content, that means it's nothing rendered yet
+        // otherwise you would get weird things if you try to depend on something being already being renedered.
+        // Although the cost of that is that we have to do the pre_render() step twice.
         let global = liquid::object!({
             "articles": global_articles,
             "tags": global_tags,
             "cats": global_cats,
         });
 
-        info!("{:?}", self.layouts);
+        if self.articles.is_empty() {
+            error!("no articles found");
+        }
 
-        for obj in self.articles {
+        info!("layouts: {:?}", self.layouts);
+
+        let mut errors: HashMap<String, Vec<String>> = HashMap::new();
+        let mut i = 0;
+        for art in self.articles {
             //TODO: make this be the url
             let mut output_path = self.output.clone();
-            output_path.push(PathBuf::from(&obj.url));
+            output_path.push(PathBuf::from(&art.url));
             info!("writing to {:?}", output_path);
 
-            match obj.true_render(&global, &parser) {
+            match &art.true_render(&global, &parser) {
                 Ok(output) => {
+                    info!("success");
                     let mut file = File::create(output_path).unwrap();
                     file.write_all(output.as_bytes()).unwrap();
                 }
-                Err(e) => error!("{}", e),
+                Err(e) => match e {
+                    error::CustomError::LiquidError(error) => {
+                        if !error.contains("from: {% include") {
+                            error!("{}file:\n   {}\n", error, self.article_paths[i]);
+                        } else {
+                            errors
+                                .entry(format!("Template {}", error))
+                                .or_insert(Vec::new())
+                                .push(self.article_paths[i].clone());
+                        }
+                    }
+
+                    error::CustomError::IOError(_) => {}
+                },
+            }
+
+            i += 1;
+        }
+
+        if !errors.is_empty(){
+            for (error, affected) in errors {
+                error!("{}files that use this template:\n   {}\n", error, affected.join(", "));
             }
         }
     }

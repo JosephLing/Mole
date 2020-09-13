@@ -1,4 +1,5 @@
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
+use std::path::PathBuf;
 
 type ErrorMessage = String;
 
@@ -23,7 +24,7 @@ impl std::fmt::Debug for ParseError {
 
 pub fn parse_error_message(
     message: &str,
-    path: &str,
+    path: &PathBuf,
     line: &str,
     start: usize,
     end: usize,
@@ -48,7 +49,7 @@ pub fn parse_error_message(
 
     let msg : ErrorMessage = format!(
         "\n{s   } --> {p} {n}:{start}\n{s   } |\n{n:w$} | {line}\n{s   } | {underline}\n{s   } |\n{s  }{m}",
-        p = path,
+        p = path.to_str().unwrap(),
         line = line,
         s = spacing,
         w = spacing.len(),
@@ -64,7 +65,7 @@ pub fn parse_error_message(
 
 pub fn parse_key<'a>(
     rest: &'a str,
-    path: &str,
+    path: &PathBuf,
     line: &str,
     lineno: i8,
 ) -> Result<(&'a str, &'a str), ParseError> {
@@ -93,7 +94,7 @@ pub fn parse_key<'a>(
 
 pub fn parse_value_string<'a>(
     rest: &'a str,
-    path: &str,
+    path: &PathBuf,
     line: &str,
     lineno: i8,
 ) -> Result<&'a str, ParseError> {
@@ -123,7 +124,7 @@ pub fn parse_value_string<'a>(
 
 pub fn parse_value_boolean(
     rest: &str,
-    path: &str,
+    path: &PathBuf,
     line: &str,
     lineno: i8,
 ) -> Result<bool, ParseError> {
@@ -142,7 +143,7 @@ pub fn parse_value_boolean(
 
 pub fn parse_value_time(
     rest: &str,
-    path: &str,
+    path: &PathBuf,
     line: &str,
     lineno: i8,
 ) -> Result<NaiveDateTime, ParseError> {
@@ -164,7 +165,7 @@ pub fn parse_value_time(
 
 pub fn parse_value_list(
     mut rest: &str,
-    path: &str,
+    path: &PathBuf,
     line: &str,
     lineno: i8,
 ) -> Result<Vec<String>, ParseError> {
@@ -253,7 +254,7 @@ mod parse_tests {
     #[test]
     fn parse_key_test() {
         let line = "hello: world";
-        let (key, rest) = parse_key(line, "test.txt", line, 1).unwrap();
+        let (key, rest) = parse_key(line, &PathBuf::from("test.txt"), line, 1).unwrap();
         assert_eq!(key, "hello");
         assert_eq!(rest, " world");
     }
@@ -261,7 +262,7 @@ mod parse_tests {
     #[test]
     fn parse_key_no_semicolon() {
         let line = "hello  world";
-        let err = parse_key(line, "test.txt", line, 1).err();
+        let err = parse_key(line, &PathBuf::from("test.txt"), line, 1).err();
         match err {
             Some(ParseError::InvalidKey(config)) => assert!(
                 config.contains("no semicolon found"),
@@ -275,35 +276,35 @@ mod parse_tests {
     #[test]
     fn parse_value_list_multi_spaced() {
         let line = "a, b, c, d";
-        let list = parse_value_list(line, "test.txt", line, 1).unwrap();
+        let list = parse_value_list(line, &PathBuf::from("test.txt"), line, 1).unwrap();
         assert_eq!(vec!["a", "b", "c", "d"], list);
     }
 
     #[test]
     fn parse_value_list_single() {
         let line = "a";
-        let list = parse_value_list(line, "test.txt", line, 1).unwrap();
+        let list = parse_value_list(line, &PathBuf::from("test.txt"), line, 1).unwrap();
         assert_eq!(vec!["a"], list);
     }
 
     #[test]
     fn parse_value_list_double_no_spaced() {
         let line = "a, b";
-        let list = parse_value_list(line, "test.txt", line, 1).unwrap();
+        let list = parse_value_list(line, &PathBuf::from("test.txt"), line, 1).unwrap();
         assert_eq!(vec!["a", "b"], list);
     }
 
     #[test]
     fn parse_value_list_square_brackets() {
         let line = "[a, b]";
-        let list = parse_value_list(line, "test.txt", line, 1).unwrap();
+        let list = parse_value_list(line, &PathBuf::from("test.txt"), line, 1).unwrap();
         assert_eq!(vec!["a", "b"], list);
     }
 
     #[test]
     fn parse_value_list_sauare_brackets_err() {
         let line = "[a, b";
-        let err = parse_value_list(line, "test.txt", line, 1).err();
+        let err = parse_value_list(line, &PathBuf::from("test.txt"), line, 1).err();
         match err {
             Some(ParseError::InvalidValue(config)) => assert!(
                 config.contains("found opening square bracket for list but no opening bracket"),
@@ -317,21 +318,21 @@ mod parse_tests {
     #[test]
     fn parse_value_list_single_quote() {
         let line = "',a', 'b'";
-        let list = parse_value_list(line, "test.txt", line, 1).unwrap();
+        let list = parse_value_list(line, &PathBuf::from("test.txt"), line, 1).unwrap();
         assert_eq!(vec!["',a'", "'b'"], list);
     }
 
     #[test]
     fn parse_value_list_double_quote() {
         let line = "\",a\", \"b\"";
-        let list = parse_value_list(line, "test.txt", line, 1).unwrap();
+        let list = parse_value_list(line, &PathBuf::from("test.txt"), line, 1).unwrap();
         assert_eq!(vec!["\",a\"", "\"b\""], list);
     }
 
     #[test]
     fn parse_value_list_err() {
         let line = "a, b,";
-        let err = parse_value_list(line, "test.txt", line, 1).err();
+        let err = parse_value_list(line, &PathBuf::from("test.txt"), line, 1).err();
         match err {
             Some(ParseError::InvalidValue(config)) => assert!(
                 config.contains("value expected after semi-colon"),
