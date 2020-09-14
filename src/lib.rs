@@ -1,5 +1,4 @@
 pub mod article;
-use article::Article;
 use log::{error, info, warn};
 use std::collections::HashMap;
 use std::fs::read_to_string;
@@ -212,10 +211,53 @@ impl<'a> Build<'a> {
             i += 1;
         }
 
-        if !errors.is_empty(){
+        if !errors.is_empty() {
             for (error, affected) in errors {
-                error!("{}files that use this template:\n   {}\n", error, affected.join(", "));
+                if self.backtrace {
+                    error!(
+                        "{}files that use this template:\n   {}\n",
+                        parse_backtrace(&error, &self.includes_paths),
+                        affected.join(", ")
+                    );
+                } else {
+                    error!(
+                        "{}files that use this template:\n   {}\n",
+                        error,
+                        affected.join(", ")
+                    );
+                }
             }
         }
     }
+}
+
+
+/// provides file path for liquid include errors
+/// note: getting location of the include error in files will be even more messy
+fn parse_backtrace<'a>(error: &str, templates: &HashMap<String, String>) -> String {
+    let mut inside_include = false;
+    let mut msg = "".to_string();
+    for line in error.split("\n") {
+        if line.starts_with("from: {% include") {
+            inside_include = true;
+            msg += line;
+        } else if inside_include && line.starts_with("    \"") {
+
+            if let Some(index) = line[5..].find('"') {
+                if let Some(path) = templates.get(&line[5..5+index]) {
+                    msg += &format!("{}\n    {} = {}", line,&line[5..5+index], path);
+                }
+            } else {
+                msg += line;
+            }
+        } else if !inside_include && line == "\twith:" {
+            inside_include = false;
+            msg += line;
+        }else{
+            msg += line;
+        } 
+        msg += "\n";
+    }
+
+    msg
 }

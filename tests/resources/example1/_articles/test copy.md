@@ -9,7 +9,6 @@ description: hello world
 {% endfor %}
 
 
-{{asfsdfs}}
 
 # links html:
 {% for art in global.foobar %}
