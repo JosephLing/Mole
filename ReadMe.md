@@ -76,7 +76,7 @@ You can do:
   {{art.content}}
 {% endfor %}
 ```
-To cause a recursive pattern of posts but that will include the current post. Is currently only fixed to do 2 levels of recursion so it would be best to wrap in an if statement `{{% if art.title != config.tilte %}}`.
+To cause a recursive pattern of posts but that will include the current post. Is currently only fixed to do 2 levels of recursion so it would be best to wrap in an if statement `{{% if art.title != config.title %}}`.
 
 ## command line
 `mole build`
