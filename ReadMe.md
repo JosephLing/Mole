@@ -3,7 +3,7 @@
 
 Heavily inspired by Jekyll and  (https://github.com/cobalt-org/cobalt.rs)
 
-A side project to able to learn Rust with a real world project. 
+A awesome side project to able to learn Rust with a real world project. 
 
 
 WIP:
