@@ -109,6 +109,37 @@ pub fn parse_value_string<'a>(
             lineno,
         )));
     }
+
+    if rest.starts_with('"') {
+        if !rest.ends_with('"') {
+            return Err(ParseError::InvalidValue(parse_error_message(
+                "string started with \" character but did not close string at the end",
+                path,
+                line,
+                0,
+                line.len(),
+                lineno,
+            )));
+        } else {
+            return Ok(&rest[1..rest.len() - 1]);
+        }
+    }
+
+    if rest.starts_with("'") {
+        if !rest.ends_with("'") {
+            return Err(ParseError::InvalidValue(parse_error_message(
+                "string started with \" character but did not close string at the end",
+                path,
+                line,
+                0,
+                line.len(),
+                lineno,
+            )));
+        } else {
+            return Ok(&rest[1..rest.len() - 1]);
+        }
+    }
+
     if rest == "---" {
         return Err(ParseError::InvalidValue(parse_error_message(
             "found '---' can't use configuration start and end identifier as a value",
@@ -319,14 +350,14 @@ mod parse_tests {
     fn parse_value_list_single_quote() {
         let line = "',a', 'b'";
         let list = parse_value_list(line, &PathBuf::from("test.txt"), line, 1).unwrap();
-        assert_eq!(vec!["',a'", "'b'"], list);
+        assert_eq!(vec![",a", "b"], list);
     }
 
     #[test]
     fn parse_value_list_double_quote() {
         let line = "\",a\", \"b\"";
         let list = parse_value_list(line, &PathBuf::from("test.txt"), line, 1).unwrap();
-        assert_eq!(vec!["\",a\"", "\"b\""], list);
+        assert_eq!(vec![",a", "b"], list);
     }
 
     #[test]
