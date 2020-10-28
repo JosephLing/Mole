@@ -1,11 +1,13 @@
-pub mod article;
 use log::{error, info, warn};
 use std::collections::HashMap;
 use std::fs::read_to_string;
 use std::fs::File;
 use std::io::{prelude::*, BufReader};
 use std::path::{Path, PathBuf};
+
+pub mod article;
 pub mod error;
+mod include_tag;
 pub mod parse;
 mod util;
 
@@ -44,9 +46,9 @@ impl<'a> Build<'a> {
                     match util::path_file_name_to_string(&file_path) {
                         Ok(rel_path) => {
                             if layout {
-                                info!("new layout {:?}", rel_path);
+                                info!("new layout {}", rel_path);
                             } else {
-                                info!("new include {:?}", rel_path);
+                                info!("new include {}", rel_path);
                             }
 
                             // only including error information when backtrace enabled otherwise we just ignore it
@@ -149,6 +151,17 @@ impl<'a> Build<'a> {
 
         let parser = liquid::ParserBuilder::with_stdlib()
             .partials(self.includes)
+            .tag(include_tag::IncludeTag) // currenlty we are using our own custom include tag
+            // however after the PR merges we can optionally have a flag to switch between jekyll and liquid
+            
+            // Intentionally staying with `stdlib::IncludeTag` rather than `jekyll::IncludeTag`
+            // .filter(liquid_lib::jekyll::include)
+            .filter(liquid_lib::jekyll::Slugify)
+            .filter(liquid_lib::jekyll::Pop)
+            .filter(liquid_lib::jekyll::Push)
+            .filter(liquid_lib::jekyll::Shift)
+            .filter(liquid_lib::jekyll::Unshift)
+            .filter(liquid_lib::jekyll::ArrayToSentenceString)
             .build()
             .unwrap();
 
@@ -172,6 +185,16 @@ impl<'a> Build<'a> {
             "cats": global_cats,
         });
 
+        let site = &liquid::object!({
+            "description":"cas",
+            "baseurl":"localhost ",
+            "url":"asdfasdf",
+            "title":"foo bar",
+            "pages": global_articles,
+            "categories": global_cats,
+            "email": "foo@gmail.com"
+        });
+
         if self.articles.is_empty() {
             error!("no articles found");
         }
@@ -186,16 +209,20 @@ impl<'a> Build<'a> {
             output_path.push(PathBuf::from(&art.url));
             info!("writing to {:?}", output_path);
 
-            match &art.true_render(&global, &parser) {
+            match &art.true_render(&global, site, &parser) {
                 Ok(output) => {
-                    info!("success");
+                    info!("attempting to write too: {:?}", output_path);
                     let mut file = File::create(output_path).unwrap();
                     file.write_all(output.as_bytes()).unwrap();
                 }
                 Err(e) => match e {
                     error::CustomError::LiquidError(error) => {
                         if !error.contains("from: {% include") {
-                            error!("{}file:\n   {}\n", error, self.article_paths[i]);
+                            panic!(
+                                "{}file:\n   {}\n",
+                                parse_backtrace(error, &HashMap::new()),
+                                self.article_paths[i]
+                            );
                         } else {
                             errors
                                 .entry(format!("Template {}", error))
@@ -204,7 +231,7 @@ impl<'a> Build<'a> {
                         }
                     }
 
-                    error::CustomError::IOError(_) => {}
+                    error::CustomError::IOError(e) => error!("{}", e),
                 },
             }
 
@@ -230,7 +257,6 @@ impl<'a> Build<'a> {
         }
     }
 }
-
 
 /// provides file path for liquid include errors
 /// note: getting location of the include error in files will be even more messy

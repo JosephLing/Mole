@@ -1,8 +1,7 @@
+use kstring::KString;
 use liquid::Object;
-use log::{error, info, warn};
 use std::io::Write;
 
-use liquid_core::parser::TryMatchToken;
 use liquid_core::Error;
 use liquid_core::Expression;
 use liquid_core::Language;
@@ -11,15 +10,18 @@ use liquid_core::Result;
 use liquid_core::ValueView;
 use liquid_core::{error::ResultLiquidExt, Value};
 use liquid_core::{ParseTag, TagReflection, TagTokenIter};
-use liquid_core::{Runtime, Template};
+use liquid_core::Runtime;
+
 #[derive(Debug)]
 struct Include {
     partial: Expression,
-    vars: Vec<(String, Expression)>,
+    vars: Vec<(KString, Expression)>,
 }
 
 impl Renderable for Include {
     fn render_to(&self, writer: &mut dyn Write, runtime: &mut Runtime<'_>) -> Result<()> {
+        //TODO: evaluate here
+        println!("about crash here: {:?}", self.partial);
         let value = self.partial.evaluate(runtime)?;
         if !value.is_scalar() {
             return Error::with_msg("Can only `include` strings")
@@ -27,27 +29,24 @@ impl Renderable for Include {
                 .into_err();
         }
 
-        let mut varaibles_evaluated = Vec::new();
-        for (id, expr) in &self.vars {
-            varaibles_evaluated.push((
-                id.to_owned(),
-                expr.try_evaluate(runtime)
-                    .ok_or_else(|| Error::with_msg("failed to evaluate value"))?
-                    .into_owned(),
-            ));
-        }
-
         let name = value.to_kstr().into_owned();
+
+        println!("rendering: {:?}", name);
 
         runtime.run_in_named_scope(name.clone(), |mut scope| -> Result<()> {
             // if there our additional varaibles creates a include object to access all the varaibles
             // from e.g. { include 'image.html' path="foo.png" }
             // then in image.html you could have <img src="{{include.path}}" />
-            if !varaibles_evaluated.is_empty() {
+            if !self.vars.is_empty() {
                 let mut helper_vars = Object::new();
 
-                for (id, val) in varaibles_evaluated {
-                    helper_vars.insert(id.into(), val);
+                for (id, val) in &self.vars {
+                    helper_vars.insert(
+                        id.to_owned().into(),
+                        val.try_evaluate(scope)
+                            .ok_or_else(|| Error::with_msg("failed to evaluate value"))?
+                            .into_owned(),
+                    );
                 }
 
                 scope.stack_mut().set("include", Value::Object(helper_vars));
@@ -95,24 +94,10 @@ impl ParseTag for IncludeTag {
         _options: &Language,
     ) -> Result<Box<dyn Renderable>> {
         let name = arguments.expect_next("Identifier or literal expected.")?;
-        // This may accept strange inputs such as `{% include 0 %}` or `{% include filterchain | filter:0 %}`.
-        // Those inputs would fail anyway by there being not a path with those names so they are not a big concern.
-        let name = match name.expect_identifier() {
-            // Using `to_kstr()` on literals ensures `Strings` will have their quotes trimmed.
-            TryMatchToken::Matches(name) => name.to_kstr().to_string(),
-            TryMatchToken::Fails(name) => {
-                let name = name.as_str();
-                // here we are combining jekyll's and colbalt's include syntax
-                // basically allowing `include foo` and `include 'foo'`
-                if name.starts_with("'") && name.ends_with("'") {
-                    name[1..name.len() - 1].to_string()
-                } else {
-                    name.to_string()
-                }
-            }
-        };
+        
+        let name = name.expect_value().into_result()?;
 
-        let mut vars = Vec::new();
+        let mut vars: Vec<(KString, Expression)> = Vec::new();
         while let Ok(next) = arguments.expect_next("") {
             let id = next.expect_value().into_result()?.to_string();
 
@@ -122,7 +107,7 @@ impl ParseTag for IncludeTag {
                 .into_result_custom_msg("expected '=' to be used for the assignment")?;
 
             vars.push((
-                id,
+                id.into(),
                 arguments
                     .expect_next("expected expression/value")?
                     .expect_value()
@@ -131,8 +116,8 @@ impl ParseTag for IncludeTag {
         }
 
         Ok(Box::new(Include {
-            partial:Expression::with_literal(name),
-            vars: vars.clone(),
+            partial:name,
+            vars: vars,
         }))
     }
 

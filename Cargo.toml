@@ -8,13 +8,21 @@ edition = "2018"
 
 [dependencies]
 liquid = "0.21"
+liquid-lib = { version = "0.21.0", features = ["jekyll"] }
+liquid-core = "0.21"
+kstring = "1.0.0"
+
 pulldown-cmark = {version =  "0.7.2", default-features = false}
+
 argh = "0.1.3"
 log = "0.4"
 simple_logger = "*"
+
 grass = "0.10.0"
+
 notify = "4.0.12"
 tiny_http = "0.7"
+
 mime_guess = "2"
 chrono = "0.4.15"
 

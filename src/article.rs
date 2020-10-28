@@ -194,11 +194,11 @@ impl Article {
 
         let config_liquid = liquid::object!({
             "content": template,
+            "title": config.title,
+            "description": config.description,
+            "tags": config.tags,
+            "categories": config.categories,
             "config": liquid::object!({
-                "title": config.title,
-                "description": config.description,
-                "tags": config.tags,
-                "categories": config.categories,
                 "visible": config.visible,
                 "layout": config.layout,
             }),
@@ -242,11 +242,11 @@ impl Article {
 
         self.config_liquid = liquid::object!({
             "content": self.template,
+            "title": self.config.title,
+            "description": self.config.description,
+            "tags": self.config.tags,
+            "categories": self.config.categories,
             "config": liquid::object!({
-                "title": self.config.title,
-                "description": self.config.description,
-                "tags": self.config.tags,
-                "categories": self.config.categories,
                 "visible": self.config.visible,
                 "layout": self.config.layout,
             }),
@@ -259,56 +259,55 @@ impl Article {
     fn render(
         &self,
         globals: &liquid::Object,
+        site: &liquid::Object,
         parser: &liquid::Parser,
     ) -> Result<String, CustomError> {
         let template = if self.config.base_layout.is_empty() {
             if self.config.layout.is_empty() {
                 warn!("no base layout found");
-                if !self.template.contains("{{page.content}}")
-                    || !self.template.contains("{{ page.content }}")
-                {
-                    //TODO: is this warning necessary and accurate????
-                    warn!("potentailly missing out {{{{page.content}}}} in layout so none of the articles text will be displayed");
-                }
-                parser.parse(&format!("{{%- include '{0}' -%}}", self.config.layout))?
+                parser.parse(&format!(
+                    "{{%- include '{0}' -%}}",
+                    self.config.layout
+                ))?
             } else {
                 warn!("no base layout found and no layout found");
                 parser.parse(&self.template)?
             }
         } else {
             warn!("using baselayout: {:?}", self.config.base_layout);
-            if !self.template.contains("{{page.content}}")
-                || !self.template.contains("{{ page.content }}")
-            {
-                //TODO: is this warning necessary and accurate????
-                warn!("potentailly missing out {{{{page.content}}}} in layout so none of the  articles text will be displayed");
-            }
-            parser.parse(&format!("{{%- include '{0}' -%}}", self.config.base_layout))?
+            parser.parse(&format!(
+                "{{%- include '{0}' -%}}",
+                self.config.base_layout
+            ))?
         };
 
         Ok(template.render(&liquid::object!({
             "global": globals,
             "page": self.config_liquid,
-            "layout": self.config.layout
+            "layout": self.config.layout,
+            "site": site,
         }))?)
     }
 
     pub fn true_render(
         self,
         global: &liquid::Object,
+        site: &liquid::Object,
         parser: &liquid::Parser,
     ) -> Result<String, CustomError> {
         Ok(self
-            .pre_render(&global, parser, false)?
-            .pre_render(&global, parser, true)?
-            .render(&global, parser)?)
+            .pre_render(global, parser, false)?
+            .pre_render(global, parser, true)?
+            .render(global, site, parser)?)
     }
 }
 
 #[cfg(test)]
 mod render {
 
-    use super::{Article, BufReader, CustomError, File, ParseError};
+        use crate::include_tag::IncludeTag;
+
+use super::{Article, BufReader, CustomError, File, ParseError};
     use std::io::Write;
     use tempfile;
 
@@ -344,12 +343,15 @@ mod render {
         for (k, v) in mocks {
             source.add(k, v);
         }
+        
         let parser = liquid::ParserBuilder::with_stdlib()
             .partials(source)
+            .tag(IncludeTag)
+
             .build()
             .unwrap();
 
-        a.true_render(global, &parser)
+        a.true_render(global, &liquid::object!({}), &parser)
     }
 
     mod parse_tests {
@@ -496,7 +498,7 @@ mod render {
                     "render_content",
                     vec![(
                         "default".to_string(),
-                        "<h1>{{page.config.title}}</h1>{{page.content}}".to_string()
+                        "<h1>{{page.title}}</h1>{{page.content}}".to_string()
                     )],
                     &liquid::object!({
                         "test": 1
@@ -515,7 +517,7 @@ mod render {
                     "render_content_with_html_in_md",
                     vec![(
                         "default".to_string(),
-                        "<h1>{{page.config.title}}</h1>{{page.content}}".to_string()
+                        "<h1>{{page.title}}</h1>{{page.content}}".to_string()
                     )],
                     &liquid::object!({
                         "test": 1
@@ -556,12 +558,12 @@ mod render {
             assert_eq!(
                 "<h1>mole</h1><p>cat mole</p>\n".to_string(),
                 gen_render_mocks(
-                    "---\r\nlayout: page\r\ntitle:mole\n---\r\ncat {{page.config.title}}",
+                    "---\r\nlayout: page\r\ntitle:mole\n---\r\ncat {{page.title}}",
                     "render_template_jekyll",
                     vec![
                         (
                             "default".to_string(),
-                            "<h1>{{page.config.title}}</h1>{% include layout %}".to_string()
+                            "<h1>{{page.title}}</h1>{% include page.config.layout %}".to_string()
                         ),
                         ("page".to_string(), "{{page.content}}".to_string())
                     ],

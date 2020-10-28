@@ -241,6 +241,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "deunicode"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "80115a2dfde04491e181c2440a39e4be26e52d9ca4e92bed213f65b94e0b8db1"
+
+[[package]]
 name = "difference"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -615,6 +621,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aa430745b78473580485ced0b9ff2403877c9ba13f3eeceaffb679ac641929c5"
 dependencies = [
  "chrono",
+ "deunicode",
  "itertools",
  "kstring",
  "liquid-core",
@@ -720,7 +727,10 @@ dependencies = [
  "chrono",
  "difference",
  "grass",
+ "kstring",
  "liquid",
+ "liquid-core",
+ "liquid-lib",
  "log",
  "mime_guess",
  "notify",
