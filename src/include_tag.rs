@@ -20,8 +20,6 @@ struct Include {
 
 impl Renderable for Include {
     fn render_to(&self, writer: &mut dyn Write, runtime: &mut Runtime<'_>) -> Result<()> {
-        //TODO: evaluate here
-        println!("about crash here: {:?}", self.partial);
         let value = self.partial.evaluate(runtime)?;
         if !value.is_scalar() {
             return Error::with_msg("Can only `include` strings")
@@ -30,8 +28,6 @@ impl Renderable for Include {
         }
 
         let name = value.to_kstr().into_owned();
-
-        println!("rendering: {:?}", name);
 
         runtime.run_in_named_scope(name.clone(), |mut scope| -> Result<()> {
             // if there our additional varaibles creates a include object to access all the varaibles
@@ -114,6 +110,8 @@ impl ParseTag for IncludeTag {
                     .into_result()?,
             ));
         }
+
+        arguments.expect_nothing()?;
 
         Ok(Box::new(Include {
             partial:name,
