@@ -1,5 +1,6 @@
 use kstring::KString;
 use liquid::Object;
+use log::warn;
 use std::io::Write;
 
 use liquid_core::Error;
@@ -28,7 +29,6 @@ impl Renderable for Include {
         }
 
         let name = value.to_kstr().into_owned();
-
         runtime.run_in_named_scope(name.clone(), |mut scope| -> Result<()> {
             // if there our additional varaibles creates a include object to access all the varaibles
             // from e.g. { include 'image.html' path="foo.png" }
@@ -52,7 +52,7 @@ impl Renderable for Include {
                 .partials()
                 .get(&name)
                 .trace_with(|| format!("{{% include {} %}}", self.partial).into())?;
-
+            
             partial
                 .render_to(writer, &mut scope)
                 .trace_with(|| format!("{{% include {} %}}", self.partial).into())
@@ -92,6 +92,12 @@ impl ParseTag for IncludeTag {
         let name = arguments.expect_next("Identifier or literal expected.")?;
         
         let name = name.expect_value().into_result()?;
+        match name.clone() {
+            Expression::Variable(v) => {
+                warn!("potential jekyll include tag found: {0} (fix add '{0}')", v.to_string().replace("[",".").replace("]", "").replace("\"",""));
+            }
+            Expression::Literal(_) => {}
+        }
 
         let mut vars: Vec<(KString, Expression)> = Vec::new();
         while let Ok(next) = arguments.expect_next("") {

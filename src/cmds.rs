@@ -95,6 +95,8 @@ fn static_file_handler(dest: &Path, req: Request) -> Result<(), mole::error::Cus
         // try to point the serve path to `path` if it corresponds to a file
         path
     } else {
+        info!("requested {:?} formed to {:?} but coudln't find file, trying {:?}+index.html", req_path, path, path);
+
         // try to point the serve path into a "index.html" file in the requested
         // path
         path.join("index.html")
@@ -214,7 +216,7 @@ impl BuildCommand {
                 .includes(&self.include, false)
                 .includes(&self.layouts, true)
                 .articles(&vec![&self.articles, &PathBuf::from(current)])
-                .sass(&self.scss, &vec![&self.scss_load_paths])
+                .sass(&self.scss, &vec![&current.join(self.scss_load_paths.clone())])
                 .run();
 
             if self.serve {
@@ -254,7 +256,7 @@ impl BuildCommand {
                                     .includes(&self.include, false)
                                     .includes(&self.layouts, true)
                                     .articles(&vec![&self.articles, &PathBuf::from(current)])
-                                    .sass(&self.scss, &vec![&self.scss_load_paths])
+                                    .sass(&self.scss, &vec![&current.join(self.scss_load_paths.clone())])
                                     .run();
                             }
                             Err(e) => error!("watch error: {:?}", e),

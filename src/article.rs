@@ -28,7 +28,7 @@ pub struct Config {
     pub categories: Vec<String>,
     pub tags: Vec<String>,
     pub visible: bool,
-    pub date: Option<NaiveDateTime>,
+    pub date: Option<String>,
 }
 
 impl Default for Config {
@@ -130,7 +130,7 @@ pub fn parse(data: BufReader<File>, path: &PathBuf) -> Result<(Config, String), 
                 "titlebar" => {
                     config.visible = parse_value_boolean(rest.trim(), path, line, line_n)?
                 }
-                "date" => config.date = Some(parse_value_time(rest.trim(), path, line, line_n)?),
+                "date" => config.date = Some(parse_value_time(rest.trim(), path, line, line_n)?.to_string()),
                 _ => {
                     return Err(ParseError::InvalidKey(parse_error_message(
                         "unknown key",
@@ -198,6 +198,7 @@ impl Article {
             "description": config.description,
             "tags": config.tags,
             "categories": config.categories,
+            "date": config.date,
             "config": liquid::object!({
                 "visible": config.visible,
                 "layout": config.layout,
@@ -216,6 +217,7 @@ impl Article {
     fn pre_render(
         mut self,
         globals: &liquid::Object,
+        site: &liquid::Object,
         liquid_parser: &liquid::Parser,
         md: bool,
     ) -> Result<Self, CustomError> {
@@ -226,7 +228,8 @@ impl Article {
             .render(&liquid::object!({
                 "global": globals,
                 "page": self.config_liquid,
-                "layout": self.config.layout
+                "layout": self.config.layout,
+                "site": site,
             }))?;
 
         self.template = if md {
@@ -245,6 +248,7 @@ impl Article {
             "title": self.config.title,
             "description": self.config.description,
             "tags": self.config.tags,
+            "date": self.config.date,
             "categories": self.config.categories,
             "config": liquid::object!({
                 "visible": self.config.visible,
@@ -264,7 +268,6 @@ impl Article {
     ) -> Result<String, CustomError> {
         let template = if self.config.base_layout.is_empty() {
             if self.config.layout.is_empty() {
-                warn!("no base layout found");
                 parser.parse(&format!(
                     "{{%- include '{0}' -%}}",
                     self.config.layout
@@ -274,7 +277,6 @@ impl Article {
                 parser.parse(&self.template)?
             }
         } else {
-            warn!("using baselayout: {:?}", self.config.base_layout);
             parser.parse(&format!(
                 "{{%- include '{0}' -%}}",
                 self.config.base_layout
@@ -296,8 +298,8 @@ impl Article {
         parser: &liquid::Parser,
     ) -> Result<String, CustomError> {
         Ok(self
-            .pre_render(global, parser, false)?
-            .pre_render(global, parser, true)?
+            .pre_render(global,site, parser, false)?
+            .pre_render(global,site, parser, true)?
             .render(global, site, parser)?)
     }
 }

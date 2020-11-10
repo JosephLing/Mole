@@ -1,5 +1,5 @@
-use log::{error, info, warn};
-use std::collections::HashMap;
+use log::{debug, error, info, warn};
+use std::{collections::HashMap, fs};
 use std::fs::read_to_string;
 use std::fs::File;
 use std::io::{prelude::*, BufReader};
@@ -118,6 +118,7 @@ impl<'a> Build<'a> {
         if dir.exists() && dir.is_dir() {
             for f in util::search_dir(dir, "scss", true) {
                 if let Ok(data) = read_to_string(&f) {
+                    debug!("looking for dirs: {:?} paths: {:?}", dir, load_paths);
                     match grass::from_string(
                         data,
                         &grass::Options::default().load_paths(load_paths),
@@ -125,7 +126,7 @@ impl<'a> Build<'a> {
                         Ok(css) => {
                             let mut output_path = self.output.clone();
                             output_path
-                                .push(Path::new(&util::path_file_name_to_string(&f).unwrap()));
+                                .push(Path::new(&util::path_file_name_to_string(&f).unwrap().replace("scss", "css")));
                             info!("writing css to {:?}", output_path);
 
                             let mut file = File::create(output_path).unwrap();
@@ -187,12 +188,12 @@ impl<'a> Build<'a> {
 
         let site = &liquid::object!({
             "description":"cas",
-            "baseurl":"localhost ",
+            "baseurl":"",
             "url":"asdfasdf",
             "title":"foo bar",
             "pages": global_articles,
             "categories": global_cats,
-            "email": "foo@gmail.com"
+            "email": "foo@gmail.com",
         });
 
         if self.articles.is_empty() {
@@ -206,7 +207,16 @@ impl<'a> Build<'a> {
         for art in self.articles {
             //TODO: make this be the url
             let mut output_path = self.output.clone();
-            output_path.push(PathBuf::from(&art.url));
+            output_path.push(PathBuf::from(if art.url.starts_with("/"){
+                &art.url[1..]
+            }else{
+                &art.url
+            }));
+            // output_path.push(PathBuf::from(&art.url));
+            if art.url.ends_with("/"){
+                fs::create_dir_all(&output_path);
+                output_path.push("index.html");
+            }
             info!("writing to {:?}", output_path);
 
             match &art.true_render(&global, site, &parser) {
@@ -218,12 +228,13 @@ impl<'a> Build<'a> {
                 Err(e) => match e {
                     error::CustomError::LiquidError(error) => {
                         if !error.contains("from: {% include") {
-                            panic!(
+                            error!(
                                 "{}file:\n   {}\n",
                                 parse_backtrace(error, &HashMap::new()),
                                 self.article_paths[i]
                             );
                         } else {
+                            error!("{}", e);
                             errors
                                 .entry(format!("Template {}", error))
                                 .or_insert(Vec::new())
