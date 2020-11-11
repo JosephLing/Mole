@@ -10,8 +10,8 @@ List
 - b
 - c
 
-meta data {{page.config.description}} base layout: {{page.config.layout}}
-{{page.config.tags}}
+meta data {{page.description}} base layout: {{page.config.layout}}
+{{page.tags}}
 
 
 # dogs

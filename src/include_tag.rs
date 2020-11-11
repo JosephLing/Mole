@@ -8,10 +8,10 @@ use liquid_core::Expression;
 use liquid_core::Language;
 use liquid_core::Renderable;
 use liquid_core::Result;
+use liquid_core::Runtime;
 use liquid_core::ValueView;
 use liquid_core::{error::ResultLiquidExt, Value};
 use liquid_core::{ParseTag, TagReflection, TagTokenIter};
-use liquid_core::Runtime;
 
 #[derive(Debug)]
 struct Include {
@@ -38,7 +38,7 @@ impl Renderable for Include {
 
                 for (id, val) in &self.vars {
                     helper_vars.insert(
-                        id.to_owned().into(),
+                        id.clone(),
                         val.try_evaluate(scope)
                             .ok_or_else(|| Error::with_msg("failed to evaluate value"))?
                             .into_owned(),
@@ -52,7 +52,7 @@ impl Renderable for Include {
                 .partials()
                 .get(&name)
                 .trace_with(|| format!("{{% include {} %}}", self.partial).into())?;
-            
+
             partial
                 .render_to(writer, &mut scope)
                 .trace_with(|| format!("{{% include {} %}}", self.partial).into())
@@ -90,11 +90,17 @@ impl ParseTag for IncludeTag {
         _options: &Language,
     ) -> Result<Box<dyn Renderable>> {
         let name = arguments.expect_next("Identifier or literal expected.")?;
-        
+
         let name = name.expect_value().into_result()?;
         match name.clone() {
             Expression::Variable(v) => {
-                warn!("potential jekyll include tag found: {0} (fix add '{0}')", v.to_string().replace("[",".").replace("]", "").replace("\"",""));
+                warn!(
+                    "potential jekyll include tag found: {0} (fix add '{0}')",
+                    v.to_string()
+                        .replace("[", ".")
+                        .replace("]", "")
+                        .replace("\"", "")
+                );
             }
             Expression::Literal(_) => {}
         }
@@ -120,8 +126,8 @@ impl ParseTag for IncludeTag {
         arguments.expect_nothing()?;
 
         Ok(Box::new(Include {
-            partial:name,
-            vars: vars,
+            partial: name,
+            vars,
         }))
     }
 

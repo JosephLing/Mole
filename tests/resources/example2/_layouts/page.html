@@ -1,16 +1,12 @@
 <div class="post">
-
   <article class="post-content">
     <h1>title: {{ page.title}}</h1>
     <h2>cats</h2>
     {{ page.content }}
-
   </article>
   <ul>
     {% for art in global.articles %}
     <li><a href="{{art.url}}">{{art.title}}</a></li>
     {% endfor %}
-
   </ul>
-
 </div>

@@ -14,10 +14,10 @@ pub enum ParseError {
 impl std::fmt::Debug for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            ParseError::InvalidKey(s) => write!(f, "Invalid key: {}\n", s),
-            ParseError::EmptyValue(s) => write!(f, "Empty value\n{}\n", s),
-            ParseError::InvalidValue(s) => write!(f, "Invalid value: {}\n", s),
-            ParseError::InvalidConfig(s) => write!(f, "Invalid configuration: {}\n", s),
+            ParseError::InvalidKey(s) => writeln!(f, "Invalid key: {}", s),
+            ParseError::EmptyValue(s) => writeln!(f, "Empty value\n{}", s),
+            ParseError::InvalidValue(s) => writeln!(f, "Invalid value: {}", s),
+            ParseError::InvalidConfig(s) => writeln!(f, "Invalid configuration: {}", s),
         }
     }
 }
@@ -57,8 +57,7 @@ pub fn parse_error_message(
         n = lineno,
         start = start,
         m = message
-    )
-    .to_string();
+    );
 
     msg
 }
@@ -79,7 +78,7 @@ pub fn parse_key<'a>(
             lineno,
         )));
     }
-    if let Some(index) = rest.find(":") {
+    if let Some(index) = rest.find(':') {
         return Ok((&rest[0..index], &rest[index + 1..]));
     }
     Err(ParseError::InvalidKey(parse_error_message(
@@ -125,8 +124,8 @@ pub fn parse_value_string<'a>(
         }
     }
 
-    if rest.starts_with("'") {
-        if !rest.ends_with("'") {
+    if rest.starts_with('\'') {
+        if !rest.ends_with('\'') {
             return Err(ParseError::InvalidValue(parse_error_message(
                 "string started with \" character but did not close string at the end",
                 path,
@@ -216,9 +215,9 @@ pub fn parse_value_list(
     let mut in_string = false;
     let mut in_string_lower = false;
 
-    if rest.starts_with("[") {
-        if rest.ends_with("]") {
-            rest = rest.trim_start_matches("[").trim_end_matches("]");
+    if rest.starts_with('[') {
+        if rest.ends_with(']') {
+            rest = rest.trim_start_matches('[').trim_end_matches(']');
         } else {
             return Err(ParseError::InvalidValue(parse_error_message(
                 "found opening square bracket for list but no opening bracket",

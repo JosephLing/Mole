@@ -10,7 +10,6 @@ use log::warn;
 #[cfg(test)]
 use std::println as warn;
 
-use chrono::NaiveDateTime;
 use pulldown_cmark::{html, Options, Parser};
 use std::{
     fs::File,
@@ -44,12 +43,6 @@ impl Default for Config {
             visible: false,
             date: None,
         }
-    }
-}
-
-impl Config {
-    fn is_valid(&self) -> bool {
-        !(self.layout.is_empty() || self.title.is_empty())
     }
 }
 
@@ -130,7 +123,10 @@ pub fn parse(data: BufReader<File>, path: &PathBuf) -> Result<(Config, String), 
                 "titlebar" => {
                     config.visible = parse_value_boolean(rest.trim(), path, line, line_n)?
                 }
-                "date" => config.date = Some(parse_value_time(rest.trim(), path, line, line_n)?.to_string()),
+                "date" => {
+                    config.date =
+                        Some(parse_value_time(rest.trim(), path, line, line_n)?.to_string())
+                }
                 _ => {
                     return Err(ParseError::InvalidKey(parse_error_message(
                         "unknown key",
@@ -154,25 +150,29 @@ pub fn parse(data: BufReader<File>, path: &PathBuf) -> Result<(Config, String), 
             )));
         }
     }
-    if config.is_valid() {
-        return Ok((config, body));
-    } else if line_n == 2 {
-        return Err(ParseError::InvalidConfig(
-            format!("empty config no key value pairs found in {}", "test.txt").into(),
-        ));
+
+    if config.title.is_empty() {
+        config.title = match crate::util::path_file_name_to_string(path){
+            Ok(t) => t.replace(".md", ""),
+            Err(error) => Err(ParseError::InvalidValue(format!("No 'title' found so defaulted to using filename as title but failed to get the filename from {:?} as {:?} occured", path, error)))? 
+        };
+    }
+
+    if line_n == 2 {
+        Err(ParseError::InvalidConfig(format!(
+            "empty config no key value pairs found in {:?}",
+            path
+        )))
     } else if !reached_end {
-        return Err(ParseError::InvalidConfig(
+        Err(ParseError::InvalidConfig(
             "no at '---' for the last line of the configuration".into(),
-        ));
+        ))
     } else if config.title.is_empty() {
-        return Err(ParseError::InvalidConfig(
+        Err(ParseError::InvalidConfig(
             "missing configuration 'title' field".into(),
-        ));
+        ))
     } else {
-        return Err(ParseError::InvalidConfig(
-            "missing configuration 'layout' field or 'base_layout' to be set to a custom value"
-                .into(),
-        ));
+        Ok((config, body))
     }
 }
 
@@ -188,7 +188,7 @@ impl Article {
         let url: String = if config.permalink.is_empty() {
             format!("{}.html", config.title)
         } else {
-            config.permalink.clone() // messy.... argh!!!
+            config.permalink.clone()
         }
         .replace(" ", "%20");
 
@@ -206,12 +206,12 @@ impl Article {
             "url":url,
         });
 
-        return Ok(Article {
+        Ok(Article {
             template,
             config,
             url,
             config_liquid,
-        });
+        })
     }
 
     fn pre_render(
@@ -266,21 +266,23 @@ impl Article {
         site: &liquid::Object,
         parser: &liquid::Parser,
     ) -> Result<String, CustomError> {
+        if self.config.layout == self.config.base_layout {
+            if self.config.layout == "default" {
+                warn!("{:?} {:?}",self.config.title,ParseError::InvalidValue("base_layout has a default value of 'default' therefore setting layout to 'default' could causes an infinite loop that would lead to a stackoverflow".into()))
+            } else {
+                warn!("{:?} {:?}",self.config.title,ParseError::InvalidValue("layout and base layout are the same which could cause an infinite loop that would lead to a stackoverflow".into()))
+            }
+        }
+
         let template = if self.config.base_layout.is_empty() {
             if self.config.layout.is_empty() {
-                parser.parse(&format!(
-                    "{{%- include '{0}' -%}}",
-                    self.config.layout
-                ))?
+                parser.parse(&format!("{{%- include '{0}' -%}}", self.config.layout))?
             } else {
                 warn!("no base layout found and no layout found");
                 parser.parse(&self.template)?
             }
         } else {
-            parser.parse(&format!(
-                "{{%- include '{0}' -%}}",
-                self.config.base_layout
-            ))?
+            parser.parse(&format!("{{%- include '{0}' -%}}", self.config.base_layout))?
         };
 
         Ok(template.render(&liquid::object!({
@@ -298,8 +300,8 @@ impl Article {
         parser: &liquid::Parser,
     ) -> Result<String, CustomError> {
         Ok(self
-            .pre_render(global,site, parser, false)?
-            .pre_render(global,site, parser, true)?
+            .pre_render(global, site, parser, false)?
+            .pre_render(global, site, parser, true)?
             .render(global, site, parser)?)
     }
 }
@@ -307,9 +309,9 @@ impl Article {
 #[cfg(test)]
 mod render {
 
-        use crate::include_tag::IncludeTag;
+    use crate::include_tag::IncludeTag;
 
-use super::{Article, BufReader, CustomError, File, ParseError};
+    use super::{Article, BufReader, CustomError, File, ParseError};
     use std::io::Write;
     use tempfile;
 
@@ -345,11 +347,10 @@ use super::{Article, BufReader, CustomError, File, ParseError};
         for (k, v) in mocks {
             source.add(k, v);
         }
-        
+
         let parser = liquid::ParserBuilder::with_stdlib()
             .partials(source)
             .tag(IncludeTag)
-
             .build()
             .unwrap();
 
