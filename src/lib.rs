@@ -7,8 +7,10 @@ use std::{collections::HashMap, fs};
 
 pub mod article;
 pub mod error;
-mod include_tag;
 pub mod parse;
+
+mod include_tag;
+mod json_filter;
 mod util;
 
 pub type Partials = liquid::partials::EagerCompiler<liquid::partials::InMemorySource>;
@@ -168,6 +170,8 @@ impl<'a> Build<'a> {
         let parser = liquid::ParserBuilder::with_stdlib()
             .partials(self.includes)
             .tag(include_tag::IncludeTag) // currenlty we are using our own custom include tag
+            
+            .filter(json_filter::ToJson)
             // however after the PR merges we can optionally have a flag to switch between jekyll and liquid
             // Intentionally staying with `stdlib::IncludeTag` rather than `jekyll::IncludeTag`
             // .filter(liquid_lib::jekyll::include)
