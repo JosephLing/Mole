@@ -153,7 +153,8 @@ pub fn parse(data: BufReader<File>, path: &PathBuf) -> Result<(Config, String), 
 
     if config.title.is_empty() {
         config.title = match crate::util::path_file_name_to_string(path){
-            Ok(t) => t.replace(".md", ""),
+            //TODO: remove the extension properly!
+            Ok(t) => t.replace(".md", "").replace(".markdown", ""),
             Err(error) => Err(ParseError::InvalidValue(format!("No 'title' found so defaulted to using filename as title but failed to get the filename from {:?} as {:?} occured", path, error)))? 
         };
     }
