@@ -1,5 +1,6 @@
 use liquid::ValueView;
 use liquid_core::{to_value, Display_filter, Filter, FilterReflection, ParseFilter};
+use log::debug;
 
 #[derive(Clone, FilterReflection)]
 #[filter(
@@ -33,6 +34,7 @@ impl Filter for ToJsonFilter {
         _runtime: &liquid_core::Runtime,
     ) -> liquid_core::Result<liquid_core::Value> {
         let output = serde_json::to_string_pretty(&input.to_value()).unwrap();
+        // debug!("to_json: {}",output);
         Ok(to_value(&output)?)
     }
 }

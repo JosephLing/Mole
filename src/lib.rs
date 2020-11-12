@@ -250,6 +250,7 @@ impl<'a> Build<'a> {
                 }
                 Err(e) => match e {
                     error::CustomError::LiquidError(error) => {
+                        panic!("{}", error);
                         if !error.contains("from: {% include") {
                             error!(
                                 "{}file:\n   {}\n",
@@ -257,7 +258,7 @@ impl<'a> Build<'a> {
                                 self.article_paths[i]
                             );
                         } else {
-                            error!("{}", e);
+                           
                             errors
                                 .entry(format!("Template {}", error))
                                 .or_insert_with(Vec::new)

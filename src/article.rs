@@ -5,10 +5,12 @@ use crate::parse::{
 
 use crate::error::CustomError;
 #[cfg(not(test))]
-use log::warn;
+use log::{debug, warn};
 
 #[cfg(test)]
 use std::println as warn;
+#[cfg(test)]
+use std::println as debug;
 
 use pulldown_cmark::{html, Options, Parser};
 use std::{
@@ -184,8 +186,6 @@ impl Article {
         // markdown parsing NOTE: we are assuming that we are dealing with markdown hear!!!
         let (config, content) = parse(md, path)?;
 
-        let template = content.trim().to_string();
-
         let url: String = if config.permalink.is_empty() {
             format!("{}.html", config.title)
         } else {
@@ -194,7 +194,6 @@ impl Article {
         .replace(" ", "%20");
 
         let config_liquid = liquid::object!({
-            "content": template,
             "title": config.title,
             "description": config.description,
             "tags": config.tags,
@@ -208,7 +207,7 @@ impl Article {
         });
 
         Ok(Article {
-            template,
+            template: content.trim().to_string(),
             config,
             url,
             config_liquid,
@@ -222,7 +221,10 @@ impl Article {
         liquid_parser: &liquid::Parser,
         md: bool,
     ) -> Result<Self, CustomError> {
+        debug!("pre_render");
+
         // hack do proper error handling!!!
+        debug!("pre_rendered template");
 
         let template = liquid_parser
             .parse(&self.template)?
@@ -231,7 +233,10 @@ impl Article {
                 "page": self.config_liquid,
                 "layout": self.config.layout,
                 "site": site,
+                "content": self.template,
             }))?;
+            
+        debug!("pre_rendered render");
 
         self.template = if md {
             let parser = Parser::new_ext(&template, Options::empty());
@@ -244,8 +249,10 @@ impl Article {
             template
         };
 
+        debug!("pre_rendered html");
+
+
         self.config_liquid = liquid::object!({
-            "content": self.template,
             "title": self.config.title,
             "description": self.config.description,
             "tags": self.config.tags,
@@ -267,6 +274,10 @@ impl Article {
         site: &liquid::Object,
         parser: &liquid::Parser,
     ) -> Result<String, CustomError> {
+        debug!("render");
+        // debug!("page: {}", serde_json::to_string_pretty(&liquid::ValueView::to_value(&self.config_liquid)).unwrap());
+        // debug!("site: {}", serde_json::to_string_pretty(site).unwrap());
+        // debug!("global: {}", serde_json::to_string_pretty(globals).unwrap());
         if self.config.layout == self.config.base_layout {
             if self.config.layout == "default" {
                 warn!("{:?} {:?}",self.config.title,ParseError::InvalidValue("base_layout has a default value of 'default' therefore setting layout to 'default' could causes an infinite loop that would lead to a stackoverflow".into()))
@@ -291,6 +302,7 @@ impl Article {
             "page": self.config_liquid,
             "layout": self.config.layout,
             "site": site,
+            "content": self.template,
         }))?)
     }
 
@@ -467,7 +479,7 @@ mod render {
                     "render_globals",
                     vec![(
                         "default".to_string(),
-                        "{{global}} {{page.content}}".to_string()
+                        "{{global}} {{content}}".to_string()
                     )],
                     &liquid::object!({
                         "test": 1
@@ -502,7 +514,7 @@ mod render {
                     "render_content",
                     vec![(
                         "default".to_string(),
-                        "<h1>{{page.title}}</h1>{{page.content}}".to_string()
+                        "<h1>{{page.title}}</h1>{{content}}".to_string()
                     )],
                     &liquid::object!({
                         "test": 1
@@ -521,7 +533,7 @@ mod render {
                     "render_content_with_html_in_md",
                     vec![(
                         "default".to_string(),
-                        "<h1>{{page.title}}</h1>{{page.content}}".to_string()
+                        "<h1>{{page.title}}</h1>{{content}}".to_string()
                     )],
                     &liquid::object!({
                         "test": 1
@@ -546,7 +558,7 @@ mod render {
                         ("header".to_string(), "I am a header".to_string()),
                         ("page2".to_string(), "1".to_string()),
                         ("page3".to_string(), "2".to_string()),
-                        ("page".to_string(), "{{page.content}}".to_string()),
+                        ("page".to_string(), "{{content}}".to_string()),
                         ("page4".to_string(), "3".to_string())
                     ],
                     &liquid::object!({
@@ -569,7 +581,7 @@ mod render {
                             "default".to_string(),
                             "<h1>{{page.title}}</h1>{% include page.config.layout %}".to_string()
                         ),
-                        ("page".to_string(), "{{page.content}}".to_string())
+                        ("page".to_string(), "{{content}}".to_string())
                     ],
                     &liquid::object!({
                         "test": 1
