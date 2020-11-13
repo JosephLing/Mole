@@ -99,7 +99,19 @@ impl<'a> Build<'a> {
                     for (f, ending) in util::search_dir(&dir, true) {
                         if ending == "md" || ending == "markdown" {
                             if let Ok(cat) = File::open(&f) {
-                                match article::Article::parse(BufReader::new(cat), &f) {
+                                match article::Article::parse(BufReader::new(cat), &f, true) {
+                                    Ok(art) => {
+                                        self.articles.push(art);
+                                        self.article_paths.push(format!("{:?}", &f));
+                                    }
+                                    Err(e) => error!("{:?}", e),
+                                }
+                            } else {
+                                error!("Could not read {:?}", &f);
+                            }
+                        }else if ending == "html" {
+                            if let Ok(cat) = File::open(&f) {
+                                match article::Article::parse(BufReader::new(cat), &f, false) {
                                     Ok(art) => {
                                         self.articles.push(art);
                                         self.article_paths.push(format!("{:?}", &f));
@@ -164,6 +176,7 @@ impl<'a> Build<'a> {
     pub fn run(self) {
         info!("run");
         let mut global_articles: Vec<&liquid::Object> = Vec::new();
+        let mut global_contents: Vec<&str> = Vec::new();
         let mut global_tags: HashMap<&str, Vec<&str>> = HashMap::new();
         let mut global_cats: HashMap<&str, Vec<&str>> = HashMap::new();
 
@@ -186,6 +199,7 @@ impl<'a> Build<'a> {
 
         for obj in &self.articles {
             global_articles.push(&obj.config_liquid);
+            global_contents.push(&obj.template);
             for tag in &obj.config.tags {
                 global_tags
                     .entry(tag)
@@ -208,6 +222,8 @@ impl<'a> Build<'a> {
             "articles": global_articles,
             "tags": global_tags,
             "cats": global_cats,
+            "cats_desc": HashMap::<String,String>::new(),
+            "contents": global_contents,
         });
 
         let site = &liquid::object!({
@@ -250,20 +266,20 @@ impl<'a> Build<'a> {
                 }
                 Err(e) => match e {
                     error::CustomError::LiquidError(error) => {
-                        panic!("{}", error);
-                        if !error.contains("from: {% include") {
-                            error!(
-                                "{}file:\n   {}\n",
-                                parse_backtrace(error, &HashMap::new()),
-                                self.article_paths[i]
-                            );
-                        } else {
+                        error!("{}", error);
+                        // if !error.contains("from: {% include") {
+                        //     error!(
+                        //         "{}file:\n   {}\n",
+                        //         parse_backtrace(error, &HashMap::new()),
+                        //         self.article_paths[i]
+                        //     );
+                        // } else {
                            
-                            errors
-                                .entry(format!("Template {}", error))
-                                .or_insert_with(Vec::new)
-                                .push(self.article_paths[i].clone());
-                        }
+                        //     errors
+                        //         .entry(format!("Template {}", error))
+                        //         .or_insert_with(Vec::new)
+                        //         .push(self.article_paths[i].clone());
+                        // }
                     }
 
                     error::CustomError::IOError(e) => error!("{}", e),

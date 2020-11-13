@@ -54,6 +54,7 @@ pub struct Article {
     pub config: Config,
     pub url: String,
     pub config_liquid: liquid::Object,
+    pub is_markdown: bool
 }
 
 /// BufReader or read_to_string() is the key api choice (mmap alternatively as well)
@@ -180,11 +181,12 @@ pub fn parse(data: BufReader<File>, path: &PathBuf) -> Result<(Config, String), 
 }
 
 impl Article {
+    
     /// header is in a --- --- block with new lines
     /// the rest of the doc is template in markdown
-    pub fn parse(md: BufReader<File>, path: &PathBuf) -> Result<Article, ParseError> {
+    pub fn parse(contents: BufReader<File>, path: &PathBuf, md: bool) -> Result<Article, ParseError> {
         // markdown parsing NOTE: we are assuming that we are dealing with markdown hear!!!
-        let (config, content) = parse(md, path)?;
+        let (config, content) = parse(contents, path)?;
 
         let url: String = if config.permalink.is_empty() {
             format!("{}.html", config.title)
@@ -211,6 +213,7 @@ impl Article {
             config,
             url,
             config_liquid,
+            is_markdown: md
         })
     }
 
@@ -226,7 +229,20 @@ impl Article {
         // hack do proper error handling!!!
         debug!("pre_rendered template");
 
-        let template = liquid_parser
+        
+            
+        debug!("pre_rendered render");
+
+        if md {
+            let parser = Parser::new_ext(&self.template, Options::empty());
+
+            // Write to String buffer.
+            let mut template = String::new();
+            html::push_html(&mut template, parser);
+            self.template = template.replace("&quot;", "\"");
+        } 
+
+        self.template = liquid_parser
             .parse(&self.template)?
             .render(&liquid::object!({
                 "global": globals,
@@ -235,19 +251,6 @@ impl Article {
                 "site": site,
                 "content": self.template,
             }))?;
-            
-        debug!("pre_rendered render");
-
-        self.template = if md {
-            let parser = Parser::new_ext(&template, Options::empty());
-
-            // Write to String buffer.
-            let mut template = String::new();
-            html::push_html(&mut template, parser);
-            template
-        } else {
-            template
-        };
 
         debug!("pre_rendered html");
 
@@ -312,10 +315,18 @@ impl Article {
         site: &liquid::Object,
         parser: &liquid::Parser,
     ) -> Result<String, CustomError> {
-        Ok(self
-            .pre_render(global, site, parser, false)?
-            .pre_render(global, site, parser, true)?
-            .render(global, site, parser)?)
+        if self.is_markdown {
+            Ok(self
+                .pre_render(global, site, parser, true)?
+                .pre_render(global, site, parser, false  )?
+                .render(global, site, parser)?)
+        }else{
+            //TODO: do we need to do this twice still???
+            Ok(self
+                .pre_render(global, site, parser, false)?
+                .pre_render(global, site, parser, false)?
+                .render(global, site, parser)?)
+        }
     }
 }
 
@@ -345,6 +356,7 @@ mod render {
         Ok(Article::parse(
             BufReader::new(File::open(path).unwrap()),
             &std::path::PathBuf::from(path),
+            true
         )?)
     }
 
